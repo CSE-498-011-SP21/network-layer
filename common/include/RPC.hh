@@ -1,5 +1,4 @@
 #include <functional>
-#include <boost/asio.hpp>
 #include <iostream>
 
 #ifndef NETWORKLAYER_RPC_HH
