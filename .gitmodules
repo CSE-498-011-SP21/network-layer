@@ -1,3 +1,6 @@
 [submodule "vcpkg"]
 	path = vcpkg
 	url = git@github.com:microsoft/vcpkg.git
+[submodule "eRPC"]
+	path = eRPC
+	url = https://github.com/depaulmillz/eRPC.git

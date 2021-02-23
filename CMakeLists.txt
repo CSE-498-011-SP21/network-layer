@@ -11,3 +11,5 @@ add_subdirectory(common)
 #add_subdirectory(socketBased)
 
 add_subdirectory(fabricBased)
+
+#add_subdirectory(eRPC)

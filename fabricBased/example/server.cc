@@ -6,12 +6,12 @@
 #include <thread>
 
 int main(){
-    cse498::FabricRPC f;
+    spdlog::set_level(spdlog::level::trace);
+
+    cse498::FabricRPC f(nullptr);
     f.registerRPC(1, [](cse498::pack_t p){
         return p;
     });
-
-    std::cerr << "Here\n";
 
     f.start();
 
