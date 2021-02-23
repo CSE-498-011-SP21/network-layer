@@ -1,5 +1,6 @@
 #include <functional>
 #include <iostream>
+#include <vector>
 
 #ifndef NETWORKLAYER_RPC_HH
 #define NETWORKLAYER_RPC_HH
