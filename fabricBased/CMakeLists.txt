@@ -1,11 +1,15 @@
-project(fabricBased)
-
 find_package(TBB CONFIG REQUIRED)
 
-add_executable(client src/client.cc)
-target_include_directories(client PRIVATE include)
-target_link_libraries(client rpc fabric pthread TBB::tbb)
+add_library(fabricBased INTERFACE)
+target_link_libraries(fabricBased INTERFACE rpc fabric pthread TBB::tbb)
+target_include_directories(fabricBased INTERFACE include)
 
-add_executable(server src/server.cc)
-target_include_directories(server PRIVATE include)
-target_link_libraries(server rpc fabric pthread TBB::tbb)
+add_executable(client example/client.cc)
+target_link_libraries(client fabricBased)
+
+add_executable(server example/server.cc)
+target_link_libraries(server fabricBased)
+
+add_executable(fabricTest test/fabricTest.cc)
+target_link_libraries(fabricTest PRIVATE GTest::gmock GTest::gtest GTest::gmock_main GTest::gtest_main fabricBased)
+add_test(fabricTest fabricTest)
