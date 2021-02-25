@@ -37,6 +37,19 @@ namespace cse498 {
      */
     int DEFAULT_PORT = 8080;
 
+    /*
+     * Protocol:
+     * Client Sends:
+     * uint64_t addrlen
+     * bytes of addr
+     * Header
+     * bytes of payload
+     *
+     * Server Sends:
+     * uint64_t size of payload
+     * bytes of payload
+     */
+
     /**
      * Header for RPC
      */
@@ -84,7 +97,8 @@ namespace cse498 {
          * Create server. Default mapping of function 0 to shutdown.
          * @param fabricAddress Utilize this address
          */
-        FabricRPC(const char* fabricAddress) : fnMap(new tbb::concurrent_unordered_map<uint64_t, std::function<pack_t(pack_t)>>()) {
+        FabricRPC(const char *fabricAddress) : fnMap(
+                new tbb::concurrent_unordered_map<uint64_t, std::function<pack_t(pack_t)>>()) {
 
             done = false;
 
@@ -155,34 +169,6 @@ namespace cse498 {
             ERRCHK(fi_mr_reg(domain, remote_buf, max_msg_size,
                              FI_WRITE | FI_REMOTE_WRITE | FI_READ | FI_REMOTE_READ, 0,
                              0, 0, &mr, NULL));
-            SPDLOG_TRACE("Server: Receiving client address");
-
-            ERRCHK(fi_recv(ep, remote_buf, max_msg_size, nullptr, 0, nullptr));
-            ERRCHK(wait_for_completion(rx_cq));
-            SPDLOG_TRACE("Completion");
-
-            fi_addr_t remote_addr;
-            SPDLOG_TRACE("Server: Adding client to AV");
-
-            if (1 != fi_av_insert(av, remote_buf, 1, &remote_addr, 0, NULL)) {
-                std::cerr << "ERROR - fi_av_insert did not return 1" << std::endl;
-                perror("Error");
-                exit(1);
-            }
-            // send ack
-            SPDLOG_TRACE("Server: Sending ack");
-            int err = -FI_EAGAIN;
-            while (err == -FI_EAGAIN) {
-                err = fi_send(ep, local_buf, 1, NULL, remote_addr, NULL);
-                if (err && (err != -FI_EAGAIN)) {
-                    perror("Error");
-                    exit(1);
-                }
-            }
-            SPDLOG_TRACE("Server: Waiting for Tx CQ completion");
-
-            wait_for_completion(tx_cq);
-            SPDLOG_TRACE("Sent");
         }
 
         /**
@@ -219,18 +205,29 @@ namespace cse498 {
          */
         void start() {
             while (!done) {
+                SPDLOG_TRACE("Server: Receiving client address");
+
                 ERRCHK(fi_recv(ep, remote_buf, max_msg_size, nullptr, 0, nullptr));
                 ERRCHK(wait_for_completion(rx_cq));
+                SPDLOG_TRACE("Completion");
 
-                Header h;
+                uint64_t sizeOfAddress = *(uint64_t *) remote_buf;
 
-                h = *(Header *) remote_buf;
+                fi_addr_t remote_addr;
+                SPDLOG_TRACE("Server: Adding client to AV");
 
+                if (1 != fi_av_insert(av, remote_buf + sizeof(uint64_t), 1, &remote_addr, 0, NULL)) {
+                    std::cerr << "ERROR - fi_av_insert did not return 1" << std::endl;
+                    perror("Error");
+                    exit(1);
+                }
+
+                Header h = *(Header *) (remote_buf + sizeof(uint64_t) + sizeOfAddress);
                 auto fnRes = fnMap->find(h.fnID);
 
                 pack_t p(h.sizeOfArg);
 
-                memcpy(p.data(), remote_buf + sizeof(Header), h.sizeOfArg);
+                memcpy(p.data(), remote_buf + sizeof(uint64_t) + sizeOfAddress + sizeof(Header), h.sizeOfArg);
 
                 auto res = fnRes->second(p);
 
@@ -239,8 +236,9 @@ namespace cse498 {
                 memcpy(local_buf, (char *) &size, sizeof(uint64_t));
                 memcpy(local_buf + sizeof(uint64_t), res.data(), size);
 
-                ERRCHK(fi_send(ep, local_buf, res.size() + sizeof(uint64_t), nullptr, 0, nullptr));
+                ERRCHK(fi_send(ep, local_buf, res.size() + sizeof(uint64_t), nullptr, remote_addr, nullptr));
                 ERRCHK(wait_for_completion(tx_cq));
+                ERRCHK(fi_av_remove(av, &remote_addr, 1, 0));
             }
         }
 
@@ -331,29 +329,10 @@ namespace cse498 {
                              FI_WRITE | FI_REMOTE_WRITE | FI_READ | FI_REMOTE_READ, 0,
                              0, 0, &mr, NULL));
 
-            fi_addr_t remote_addr;
             if (1 != fi_av_insert(av, fi->dest_addr, 1, &remote_addr, 0, NULL)) {
                 exit(1);
             }
 
-            size_t addrlen = 0;
-            fi_getname(&ep->fid, nullptr, &addrlen);
-            char *addr = new char[addrlen];
-            ERRCHK(fi_getname(&ep->fid, addr, &addrlen));
-
-            SPDLOG_DEBUG("Client: Sending ({0}) {1} to {2}", addrlen, (void *) addr, remote_addr);
-            int err = -FI_EAGAIN;
-            do {
-                err = fi_send(ep, addr, addrlen, NULL, remote_addr, NULL);
-                if (err && (err != -FI_EAGAIN))
-                    exit(1);
-            } while (err == -FI_EAGAIN);
-            wait_for_completion(tx_cq);
-
-            SPDLOG_TRACE("Sent");
-            ERRCHK(fi_recv(ep, remote_buf, max_msg_size, 0, 0, NULL));
-            wait_for_completion(rx_cq);
-            SPDLOG_TRACE("Received ack");
         }
 
         /**
@@ -382,16 +361,29 @@ namespace cse498 {
          * @return pack_t returned by remote function
          */
         pack_t callRemote(uint64_t fnID, pack_t data) {
+
+            assert(sizeof(size_t) == sizeof(uint64_t));
+
+            size_t addrlen = 0;
+            fi_getname(&ep->fid, nullptr, &addrlen);
+            char *addr = new char[addrlen];
+            ERRCHK(fi_getname(&ep->fid, addr, &addrlen));
+
+            SPDLOG_DEBUG("Client: Sending ({0}) {1} to {2}", addrlen, (void *) addr, remote_addr);
+
+            memcpy(local_buf, &addrlen, sizeof(uint64_t));
+            memcpy(local_buf + sizeof(uint64_t), addr, addrlen);
+
             Header h;
             h.sizeOfArg = data.size();
             h.fnID = fnID;
-            memcpy(local_buf, (char *) &h, sizeof(Header));
-            if (data.size() + sizeof(Header) > max_msg_size) {
+            memcpy(local_buf + sizeof(uint64_t) + addrlen, (char *) &h, sizeof(Header));
+            if (sizeof(uint64_t) + addrlen + data.size() + sizeof(Header) > max_msg_size) {
                 exit(1);
             }
-            memcpy(local_buf + sizeof(Header), data.data(), data.size());
+            memcpy(local_buf + sizeof(uint64_t) + addrlen + sizeof(Header), data.data(), data.size());
 
-            ERRCHK(fi_send(ep, local_buf, data.size() + sizeof(Header), nullptr, 0, nullptr));
+            ERRCHK(fi_send(ep, local_buf, data.size() + sizeof(uint64_t) + addrlen + data.size() + sizeof(Header), nullptr, remote_addr, nullptr));
             ERRCHK(wait_for_completion(tx_cq));
 
             ERRCHK(fi_recv(ep, remote_buf, max_msg_size, nullptr, 0, nullptr));
@@ -405,6 +397,7 @@ namespace cse498 {
         }
 
     private:
+        fi_addr_t remote_addr;
         fi_info *fi, *hints;
         fid_fabric *fabric;
         fid_domain *domain;
