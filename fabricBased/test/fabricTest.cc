@@ -3,7 +3,7 @@
 //
 
 #include <networklayer/RPC.hh>
-#include "fabricBased.hh"
+#include <networklayer/fabricBased.hh>
 #include <gtest/gtest.h>
 #include <future>
 
@@ -15,7 +15,8 @@ TEST(fabricTest, fabricTest_echo) {
 
     auto f = std::async([&done]() {
         done = true;
-        cse498::FabricRPC f;
+        const char* address = "127.0.0.1";
+        cse498::FabricRPC f(address);
         f.registerRPC(1, [](cse498::pack_t p) {
             return p;
         });

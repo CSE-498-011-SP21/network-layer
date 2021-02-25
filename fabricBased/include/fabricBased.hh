@@ -28,15 +28,34 @@ inline void error_check(int err, std::string file, int line) {
     }
 }
 
+static_assert(FI_MAJOR_VERSION == 1 && FI_MINOR_VERSION == 6, "Rely on libfabric 1.6");
+
 namespace cse498 {
 
+    /**
+     * Default port for RPCs
+     */
     int DEFAULT_PORT = 8080;
 
+    /**
+     * Header for RPC
+     */
     struct Header {
+        /**
+         * Function ID number
+         */
         uint64_t fnID;
+        /**
+         * Size of argument to be sent
+         */
         uint64_t sizeOfArg;
     };
 
+    /**
+     * Waits for something to happen in the cq.
+     * @param cq The CQ we are waiting on
+     * @return error
+     */
     int wait_for_completion(struct fid_cq *cq) {
         fi_cq_entry entry;
         int ret;
@@ -56,8 +75,15 @@ namespace cse498 {
     }
 
 
+    /**
+     * FabricRPC class. Currently a connectionless server.
+     */
     class FabricRPC final : public RPC {
     public:
+        /**
+         * Create server. Default mapping of function 0 to shutdown.
+         * @param fabricAddress Utilize this address
+         */
         FabricRPC(const char* fabricAddress) : fnMap(new tbb::concurrent_unordered_map<uint64_t, std::function<pack_t(pack_t)>>()) {
 
             done = false;
@@ -160,6 +186,9 @@ namespace cse498 {
             SPDLOG_TRACE("Sent");
         }
 
+        /**
+         * Destructor
+         */
         ~FabricRPC() {
             fi_freeinfo(hints);
             fi_freeinfo(fi);
@@ -186,6 +215,9 @@ namespace cse498 {
             assert(fnMap->insert({fnID, fn}).second);
         }
 
+        /**
+         * Start the server.
+         */
         void start() {
             while (!done) {
                 ERRCHK(fi_recv(ep, remote_buf, max_msg_size, nullptr, 0, nullptr));
@@ -233,8 +265,16 @@ namespace cse498 {
         std::atomic_bool done;
     };
 
+    /**
+     * RPC client using libfabric
+     */
     class FabricRPClient final : public RPClient {
     public:
+        /**
+         * Create client
+         * @param address connect to this address
+         * @param port connect to this port
+         */
         FabricRPClient(const std::string &address, uint16_t port) {
             SPDLOG_TRACE("Getting fi provider");
             hints = fi_allocinfo();
@@ -317,6 +357,9 @@ namespace cse498 {
             SPDLOG_TRACE("Received ack");
         }
 
+        /**
+         * Destructor
+         */
         ~FabricRPClient() {
             fi_freeinfo(hints);
             fi_freeinfo(fi);

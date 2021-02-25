@@ -2,14 +2,14 @@
 // Created by depaulsmiller on 2/18/21.
 //
 
-#include <fabricBased.hh>
+#include <networklayer/fabricBased.hh>
 #include <thread>
 
 int main(int argc, char **argv) {
     spdlog::set_level(spdlog::level::trace);
 
     std::string addr = "127.0.0.1";
-    if (argc >= 1) {
+    if (argc > 1) {
         addr = std::string(argv[1]);
     }
 

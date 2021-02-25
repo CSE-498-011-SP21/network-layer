@@ -7,12 +7,24 @@
 
 namespace cse498 {
 
+    /**
+     * Pack_t type is used as the basic data type for serialization.
+     */
     using pack_t = std::vector<char>;
 
+    /**
+     * RPC server class.
+     */
     class RPC {
     public:
+        /**
+         * Constructor
+         */
         RPC() {}
 
+        /**
+         * Destructor
+         */
         virtual ~RPC() {}
 
         /**
@@ -23,10 +35,19 @@ namespace cse498 {
         virtual void registerRPC(uint64_t fnId, std::function<pack_t(pack_t)> fn) = 0;
     };
 
+    /**
+     * RPC client class.
+     */
     class RPClient {
     public:
+        /**
+         * Constructor
+         */
         RPClient() {}
 
+        /**
+         * Destructor
+         */
         virtual ~RPClient() {}
 
         /**
