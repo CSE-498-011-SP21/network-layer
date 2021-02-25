@@ -160,7 +160,6 @@ namespace cse498 {
             ERRCHK(fi_recv(ep, remote_buf, max_msg_size, nullptr, 0, nullptr));
             ERRCHK(wait_for_completion(rx_cq));
             SPDLOG_TRACE("Completion");
-            fi_recv(ep, remote_buf, max_msg_size, nullptr, 0, NULL);
 
             fi_addr_t remote_addr;
             SPDLOG_TRACE("Server: Adding client to AV");
