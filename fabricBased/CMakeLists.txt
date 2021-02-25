@@ -1,10 +1,13 @@
 find_package(TBB CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
 
+file(GLOB_RECURSE PUBLIC_HEADERS_FABRIC include/*)
+
 add_custom_target(include_fabricBased ALL
         COMMAND ${CMAKE_COMMAND} -E copy_directory
         ${CMAKE_CURRENT_SOURCE_DIR}/include/
         ${CMAKE_CURRENT_BINARY_DIR}/include/networklayer/
+        DEPENDS ${PUBLIC_HEADERS_FABRIC}
         )
 
 add_library(fabricBased INTERFACE)
