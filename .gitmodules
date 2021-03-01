@@ -4,3 +4,6 @@
 [submodule "eRPC"]
 	path = eRPC
 	url = https://github.com/depaulmillz/eRPC.git
+[submodule "common"]
+	path = common
+	url = git@github.com:CSE-498-011-SP21/common.git

@@ -6,6 +6,8 @@ find_package(GTest CONFIG REQUIRED)
 
 enable_testing()
 
+add_subdirectory(commonAPI)
+
 add_subdirectory(common)
 
 add_subdirectory(fabricBased)
