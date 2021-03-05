@@ -22,6 +22,9 @@ target_link_libraries(client fabricBased)
 add_executable(server example/server.cc)
 target_link_libraries(server fabricBased)
 
+add_executable(connection include/connection.cc)
+target_link_libraries(connection fabricBased)
+
 add_executable(fabricTest test/fabricTest.cc)
 target_link_libraries(fabricTest PRIVATE GTest::gmock GTest::gtest GTest::gmock_main GTest::gtest_main fabricBased)
 add_test(fabricTest fabricTest)
