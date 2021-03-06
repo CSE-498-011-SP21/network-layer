@@ -6,8 +6,8 @@
 #include <rdma/fi_cm.h>
 #include <rdma/fi_tagged.h>
 
-// #define SPDLOG_ACTIVE_LEVEL SPDLOG_LEVEL_TRACE
-// #include <spdlog/spdlog.h>
+#define SPDLOG_ACTIVE_LEVEL SPDLOG_LEVEL_TRACE
+#include <spdlog/spdlog.h>
 
 #include <cstring>
 #include <chrono>
@@ -26,10 +26,35 @@ inline int callCheck(int err, const char *file, int line, bool abort=true) {
 	return err;
 }
 
-const char *port = "8080";
+int wait_for_completion(struct fid_cq *cq) {
+	fi_cq_entry entry;
+	int ret;
+	while (1) {
+		ret = fi_cq_read(cq, &entry, 1);
+		if (ret > 0) return 0;
+		if (ret != -FI_EAGAIN) {
+			// New error on queue
+			struct fi_cq_err_entry err_entry;
+			fi_cq_readerr(cq, &err_entry, 0);
+			SPDLOG_WARN("{0} {1}", fi_strerror(err_entry.err),
+						fi_cq_strerror(cq, err_entry.prov_errno,
+										err_entry.err_data, NULL, 0));
+			std::cerr << "ERROR " << std::endl;
+			return ret;
+		}
+	}
+}
 
+const char *port = "8080";
+const size_t max_msg_size = 4096;
+char *local_buf;
+char *remote_buf;
 
 int main(int argc, char **argv) {
+	fid_mr *mr;
+	remote_buf = new char[max_msg_size];
+	local_buf = new char[max_msg_size];
+
 	fi_info *hints, *info;
 
 	hints = fi_allocinfo();
@@ -69,11 +94,34 @@ int main(int argc, char **argv) {
 		std::cout << "Creating passive endpoint" << std::endl;
 		safe_call(fi_endpoint(domain, info, &ep, nullptr));
 
+		fid_cq *rq;
+		struct fi_cq_attr cq_attr = {};
+		cq_attr.size = info->rx_attr->size;
+		cq_attr.wait_obj = FI_WAIT_UNSPEC;
+		safe_call(fi_cq_open(domain, &cq_attr, &rq, nullptr));
+		safe_call(fi_ep_bind(ep, &rq->fid, FI_RECV));
+		fid_cq *tq;
+		cq_attr.size = info->tx_attr->size;
+		safe_call(fi_cq_open(domain, &cq_attr, &tq, nullptr));
+		safe_call(fi_ep_bind(ep, &rq->fid, FI_TRANSMIT));
+
+		// fid_cntr *ctr;
+		// fi_cntr_attr cntr_attr = {};
+		// cntr_attr.events = FI_CNTR_EVENTS_COMP;
+		// cntr_attr.wait_obj = FI_WAIT_UNSPEC;
+		// safe_call(fi_cntr_open(domain, &cntr_attr, &ctr, nullptr));
+		// safe_call(fi_ep_bind(ep, &ctr->fid, FI_SEND | FI_RECV));
+
 		std::cout << "Binding eq to pep" << std::endl;
 		safe_call(fi_ep_bind(ep, &eq->fid, 0));
 		safe_call(fi_enable(ep));
 		std::cout << "Sending connection request" << std::endl;
 		safe_call(fi_connect(ep, info->dest_addr, nullptr, 0));
+
+		safe_call(fi_mr_reg(domain, remote_buf, max_msg_size,
+                             FI_WRITE | FI_REMOTE_WRITE | FI_READ | FI_REMOTE_READ, 0,
+                             0, 0, &mr, NULL));
+
 		char *buf = new char[512];
 		std::cout << "Waiting for connection accept" << std::endl;
 		// std::this_thread::sleep_for(std::chrono::milliseconds(10000));
@@ -87,6 +135,17 @@ int main(int argc, char **argv) {
 			exit(1);
 		}
 		std::cout << "Connected" << std::endl;
+
+		safe_call(fi_recv(ep, remote_buf, max_msg_size, nullptr, 0, nullptr));
+		safe_call(wait_for_completion(rq));
+		// char *msg = new char[7];
+		// fi_cntr_wait(ctr, 1, 2000);
+		// std::cout << "Counter Vals " << fi_cntr_read(ctr) << " : " << fi_cntr_readerr(ctr) << std::endl;
+		// std::this_thread::sleep_for(std::chrono::milliseconds(5000));
+		// struct fi_cq_entry cq_entry = {};
+		// ssize_t size = safe_call(fi_cq_sread(rq, &cq_entry, 1, nullptr, -1));
+		// int size = safe_call(fi_recv(ep, (void*) msg, 7, nullptr, 0, nullptr));
+		std::cout << "Received " << remote_buf << std::endl;//<< msg[0] << msg[1] << msg[2] << msg[3] << std::endl;
 	} else {
 		// Server
 		fi_eq_attr eq_attr = {};
@@ -132,10 +191,33 @@ int main(int argc, char **argv) {
 		// info->handle = &pep->fid;
 		safe_call(fi_endpoint(domain, entry.info, &ep, nullptr));
 
+		// fid_cntr *ctr;
+		// fi_cntr_attr cntr_attr = {};
+		// cntr_attr.events = FI_CNTR_EVENTS_COMP;
+		// cntr_attr.wait_obj = FI_WAIT_UNSPEC;
+		// safe_call(fi_cntr_open(domain, &cntr_attr, &ctr, nullptr));
+		// safe_call(fi_ep_bind(ep, &ctr->fid, FI_SEND | FI_RECV));
+
+		fid_cq *rq;
+		struct fi_cq_attr cq_attr = {};
+		cq_attr.size = info->rx_attr->size;
+		cq_attr.wait_obj = FI_WAIT_UNSPEC;
+		safe_call(fi_cq_open(domain, &cq_attr, &rq, nullptr));
+		safe_call(fi_ep_bind(ep, &rq->fid, FI_RECV));
+		fid_cq *tq;
+		cq_attr.size = info->tx_attr->size;
+		safe_call(fi_cq_open(domain, &cq_attr, &tq, nullptr));
+		safe_call(fi_ep_bind(ep, &rq->fid, FI_TRANSMIT));
+
 		std::cout << "Binding eq to pep" << std::endl;
 		safe_call(fi_ep_bind(ep, &eq->fid, 0));
 
 		safe_call(fi_enable(ep));
+
+		safe_call(fi_mr_reg(domain, remote_buf, max_msg_size,
+                             FI_WRITE | FI_REMOTE_WRITE | FI_READ | FI_REMOTE_READ, 0,
+                             0, 0, &mr, NULL));
+
 		// std::this_thread::sleep_for(std::chrono::milliseconds(5000));
 		safe_call(fi_accept(ep, nullptr, 0));
 
@@ -144,6 +226,16 @@ int main(int argc, char **argv) {
 			std::cerr << "Not a connected event" << std::endl;
 			exit(1);
 		}
+		std::string data = "potato";
+		memcpy(local_buf, data.c_str(), data.length());
 		std::cout << "Connected!" << std::endl;
+		safe_call(fi_send(ep, local_buf, data.length(), nullptr, 0, nullptr));
+		safe_call(wait_for_completion(tq));
+		// std::string mes = "potato";
+		// std::cout << "Counter value before send " << fi_cntr_read(ctr) << std::endl;
+		// safe_call(fi_send(ep, (void*) mes.c_str(), 7, nullptr, 0, nullptr));
+		// safe_call(fi_cntr_wait(ctr, 1, -1));
+		// std::cout << "Sent " << std::endl;
+		// std::this_thread::sleep_for(std::chrono::milliseconds(10000));
 	}
 }
