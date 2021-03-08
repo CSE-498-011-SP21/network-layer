@@ -12,8 +12,10 @@
 
 #include <cstring>
 
-// This is pretty neat!
-// From here: https://stackoverflow.com/a/14038590
+/**
+ * Checks if the value is negative and if so prints the error, otherwise returns the value. 
+ * Pretty cool!
+ **/
 #define SAFE_CALL(ans) callCheck((ans), __FILE__, __LINE__)
 inline int callCheck(int err, const char *file, int line, bool abort=true) {
 	if (err < 0) {
@@ -21,24 +23,6 @@ inline int callCheck(int err, const char *file, int line, bool abort=true) {
 		exit(0);
 	}
 	return err;
-}
-
-int wait_for_completion(struct fid_cq *cq) {
-	fi_cq_entry entry;
-	int ret;
-	while (1) {
-		ret = fi_cq_read(cq, &entry, 1);
-		if (ret > 0) return 0;
-		if (ret != -FI_EAGAIN) {
-			// New error on queue
-			struct fi_cq_err_entry err_entry;
-			fi_cq_readerr(cq, &err_entry, 0);
-			SPDLOG_WARN("{0} {1}", fi_strerror(err_entry.err),
-						fi_cq_strerror(cq, err_entry.prov_errno,
-										err_entry.err_data, NULL, 0));
-			return ret;
-		}
-	}
 }
 
 static_assert(FI_MAJOR_VERSION == 1 && FI_MINOR_VERSION == 6, "We require libfabric 1.6");
@@ -49,8 +33,6 @@ namespace cse498 {
 	 **/
 	class Connection {
 		public:
-			char *remote_buf = new char[MAX_MSG_SIZE];
-
 			/**
 			 * Creates the passive side of a connection (it listens to a connection request from another machine using the other contructor)
 			 **/
@@ -66,7 +48,7 @@ namespace cse498 {
 				// Server
 				open_eq();
 
-				fid_pep *pep; // TODO need to close this in the constructor
+				fid_pep *pep;
 				SPDLOG_TRACE("Creating passive endpoint");
 				SAFE_CALL(fi_passive_ep(fab, info, &pep, nullptr));
 
@@ -89,21 +71,12 @@ namespace cse498 {
 					SPDLOG_CRITICAL("Incorrect event type");
 					exit(1);
 				}
-				fi_freeinfo(info); // TODO might break some stuff. 
+				fi_close(&pep->fid);
+				fi_freeinfo(info);
 				info = entry.info;
 				SPDLOG_TRACE("Connection request received");
-				SAFE_CALL(fi_domain(fab, info, &domain, nullptr));
 				
-				SPDLOG_TRACE("Creating active endpoint");
-				SAFE_CALL(fi_endpoint(domain, info, &ep, nullptr));
-
-				setup_cntr();
-
-				SPDLOG_TRACE("Binding eq to pep");
-				SAFE_CALL(fi_ep_bind(ep, &eq->fid, 0));
-
-				SPDLOG_TRACE("Enabling endpoint");
-				SAFE_CALL(fi_enable(ep));
+				setup_active_ep();
 
 				SPDLOG_TRACE("Accepting connection request");
 				SAFE_CALL(fi_accept(ep, nullptr, 0));
@@ -122,21 +95,10 @@ namespace cse498 {
 				SAFE_CALL(fi_getinfo(FI_VERSION(1, 6), addr, DEFAULT_PORT, 0, hints, &info));
 
 				SAFE_CALL(fi_fabric(info->fabric_attr, &fab, nullptr));
-
-				SAFE_CALL(fi_domain(fab, info, &domain, nullptr));
 				
 				open_eq();
 
-				SPDLOG_TRACE("Creating endpoint");
-				SAFE_CALL(fi_endpoint(domain, info, &ep, nullptr));
-
-				setup_cntr();
-				
-				SPDLOG_TRACE("Binding eq to ep");
-				SAFE_CALL(fi_ep_bind(ep, &eq->fid, 0));
-
-				SPDLOG_TRACE("Enabling ep");
-				SAFE_CALL(fi_enable(ep));
+				setup_active_ep();
 
 				SPDLOG_TRACE("Sending connection request");
 				SAFE_CALL(fi_connect(ep, info->dest_addr, nullptr, 0));
@@ -154,9 +116,6 @@ namespace cse498 {
 				fi_close(&ep->fid);
 				fi_close(&rx_cntr->fid);
 				fi_close(&tx_cntr->fid);
-
-				delete[] local_buf;
-				delete[] remote_buf;
 			}
 
 			/**
@@ -212,7 +171,6 @@ namespace cse498 {
 		private:
 			const char *DEFAULT_PORT = "8080";
 			const size_t MAX_MSG_SIZE = 4096;
-			char *local_buf = new char[MAX_MSG_SIZE];
 
 			// These need to be closed by fabric
 			fi_info *hints, *info;
@@ -223,7 +181,9 @@ namespace cse498 {
 			fid_cntr *tx_cntr, *rx_cntr;
 
 			/**
-			 * Allocates hints, and sets the correct settings for the connection.
+			 * Allocates hints, and sets the correct settings for the connection. 
+			 * 
+			 * Requires nothing to be set
 			 **/
 			void create_hints() {
 				hints = fi_allocinfo();
@@ -232,17 +192,25 @@ namespace cse498 {
 			}
 
 			/**
-			 * Opens the event queue with the appropriate settings. No binding is performed
+			 * Opens the event queue with the appropriate settings. No binding is performed. 
+			 * 
+			 * Requires fab to be set
 			 **/
 			void open_eq() {
 				fi_eq_attr eq_attr = {};
-				eq_attr.size = 1; // Minimum size, likely not required. 
+				eq_attr.size = 1; // Minimum size, maybe not required. 
 				eq_attr.wait_obj = FI_WAIT_UNSPEC;
 				SPDLOG_TRACE("Opening event queue");
 				SAFE_CALL(fi_eq_open(fab, &eq_attr, &eq, nullptr));
 			}
 
-			void setup_cntr() {
+			/**
+			 * Sets up and binds the two counters (one for receiving messages, and another 
+			 * for sending)
+			 * 
+			 * Requires domain, ep to be set
+			 **/
+			void setup_cntrs() {
 				SPDLOG_TRACE("Opening rx and tx counters");
 				fi_cntr_attr cntr_attr = {};
 				cntr_attr.events = FI_CNTR_EVENTS_COMP;
@@ -266,6 +234,27 @@ namespace cse498 {
 					exit(1);
 				}
 				SPDLOG_DEBUG("Connected");
+			}
+
+			/**
+			 * Creates the domain, endpoint, counters, binds the event queue, and enables the ep. 
+			 * 
+			 * Requires fab, info to be set. 
+			 **/
+			void setup_active_ep() {
+				SPDLOG_TRACE("Creating domain");
+				SAFE_CALL(fi_domain(fab, info, &domain, nullptr));
+				
+				SPDLOG_TRACE("Creating active endpoint");
+				SAFE_CALL(fi_endpoint(domain, info, &ep, nullptr));
+
+				setup_cntrs();
+
+				SPDLOG_TRACE("Binding eq to pep");
+				SAFE_CALL(fi_ep_bind(ep, &eq->fid, 0));
+
+				SPDLOG_TRACE("Enabling endpoint");
+				SAFE_CALL(fi_enable(ep));
 			}
 	};
 };
