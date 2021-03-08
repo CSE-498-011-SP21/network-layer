@@ -11,8 +11,6 @@
 #include <spdlog/spdlog.h>
 
 #include <cstring>
-#include <chrono>
-#include <thread>
 
 // This is pretty neat!
 // From here: https://stackoverflow.com/a/14038590
@@ -99,14 +97,7 @@ namespace cse498 {
 				SPDLOG_TRACE("Creating active endpoint");
 				SAFE_CALL(fi_endpoint(domain, info, &ep, nullptr));
 
-				// fid_cntr *ctr;
-				// fi_cntr_attr cntr_attr = {};
-				// cntr_attr.events = FI_CNTR_EVENTS_COMP;
-				// cntr_attr.wait_obj = FI_WAIT_UNSPEC;
-				// safe_call(fi_cntr_open(domain, &cntr_attr, &ctr, nullptr));
-				// safe_call(fi_ep_bind(ep, &ctr->fid, FI_SEND | FI_RECV));
-
-				setup_cqs();
+				setup_cntr();
 
 				SPDLOG_TRACE("Binding eq to pep");
 				SAFE_CALL(fi_ep_bind(ep, &eq->fid, 0));
@@ -139,8 +130,8 @@ namespace cse498 {
 				SPDLOG_TRACE("Creating endpoint");
 				SAFE_CALL(fi_endpoint(domain, info, &ep, nullptr));
 
-				setup_cqs();
-
+				setup_cntr();
+				
 				SPDLOG_TRACE("Binding eq to ep");
 				SAFE_CALL(fi_ep_bind(ep, &eq->fid, 0));
 
@@ -161,8 +152,8 @@ namespace cse498 {
 				fi_close(&domain->fid);
 				fi_close(&eq->fid);
 				fi_close(&ep->fid);
-				fi_close(&rx_cq->fid);
-				fi_close(&tx_cq->fid);
+				fi_close(&rx_cntr->fid);
+				fi_close(&tx_cntr->fid);
 
 				delete[] local_buf;
 				delete[] remote_buf;
@@ -179,18 +170,22 @@ namespace cse498 {
 					SPDLOG_CRITICAL("Too large of a message!");
 					exit(1);
 				}
+				uint64_t init = fi_cntr_read(tx_cntr);
 				SAFE_CALL(fi_send(ep, data, size, nullptr, 0, nullptr));
-				SAFE_CALL(wait_for_completion(tx_cq));
+				SAFE_CALL(fi_cntr_wait(tx_cntr, init + 1, -1));
 			}
 
-			// I realized this will cause the next ssend after it to not wait which is 
-			// bad (since there is already something in the tx_cq)
+			// There is a safe way to write this method, but I don't want to do it unless I'm 
+			// confident it will be helpful (it would complicate the code, which I'd rather not
+			// do unless I'm confident it will get use)
 			// /**
-			//  * Sends a message through the endpoint (no blocking). 
+			//  * Sends a message through the endpoint (no blocking). The purpose of this is to
+			//  * be able to run other code unrelated to networking while you are waiting for 
+			//  * the message to send. 
 			//  * 
 			//  * !IMPORTANT! If you are using this then you can't touch the data pointer until 
-			//  * the message is sent (since there's no way of knowing when the message is sent
-			//  * you effectively can never use the data pointer again.)
+			//  * the message is sent. YOU MUST RUN FINISH_SEND BEFORE DOING ANYTHING ELSE WITH 
+			//  * THIS CONNECTION
 			//  * 
 			//  * @param data The data to send
 			//  * @param size The size of the data
@@ -210,8 +205,9 @@ namespace cse498 {
 			 * @param max_len The maximum length of the message (should be <= MAX_MSG_SIZE)
 			 **/
 			void srecv(char *buf, size_t max_len) {
+				uint64_t init = fi_cntr_read(rx_cntr);
 				SAFE_CALL(fi_recv(ep, buf, max_len, nullptr, 0, nullptr));
-				SAFE_CALL(wait_for_completion(rx_cq));
+				SAFE_CALL(fi_cntr_wait(rx_cntr, init + 1, -1));
 			}
 		private:
 			const char *DEFAULT_PORT = "8080";
@@ -224,7 +220,7 @@ namespace cse498 {
 			fid_domain *domain;
 			fid_eq *eq;
 			fid_ep *ep;
-			fid_cq *rx_cq, *tx_cq; // TODO maybe replace these with a counter?
+			fid_cntr *tx_cntr, *rx_cntr;
 
 			/**
 			 * Allocates hints, and sets the correct settings for the connection.
@@ -246,19 +242,15 @@ namespace cse498 {
 				SAFE_CALL(fi_eq_open(fab, &eq_attr, &eq, nullptr));
 			}
 
-			/**
-			 * Opens both the rx and tx cqs with the correct preferences, and binds them with the endpoint. 
-			 */
-			void setup_cqs() {
-				SPDLOG_TRACE("Creating rx_cq and tx_cq");
-				struct fi_cq_attr cq_attr = {};
-				cq_attr.size = info->rx_attr->size;
-				cq_attr.wait_obj = FI_WAIT_UNSPEC;
-				SAFE_CALL(fi_cq_open(domain, &cq_attr, &rx_cq, nullptr));
-				SAFE_CALL(fi_ep_bind(ep, &rx_cq->fid, FI_RECV));
-				cq_attr.size = info->tx_attr->size;
-				SAFE_CALL(fi_cq_open(domain, &cq_attr, &tx_cq, nullptr));
-				SAFE_CALL(fi_ep_bind(ep, &tx_cq->fid, FI_TRANSMIT));
+			void setup_cntr() {
+				SPDLOG_TRACE("Opening rx and tx counters");
+				fi_cntr_attr cntr_attr = {};
+				cntr_attr.events = FI_CNTR_EVENTS_COMP;
+				cntr_attr.wait_obj = FI_WAIT_UNSPEC;
+				SAFE_CALL(fi_cntr_open(domain, &cntr_attr, &rx_cntr, nullptr));
+				SAFE_CALL(fi_cntr_open(domain, &cntr_attr, &tx_cntr, nullptr));
+				SAFE_CALL(fi_ep_bind(ep, &rx_cntr->fid, FI_RECV));
+				SAFE_CALL(fi_ep_bind(ep, &tx_cntr->fid, FI_SEND));
 			}
 
 			/**
