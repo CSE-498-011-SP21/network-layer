@@ -22,7 +22,7 @@ target_link_libraries(client fabricBased)
 add_executable(server example/server.cc)
 target_link_libraries(server fabricBased)
 
-add_executable(connection include/connection.cc)
+add_executable(connection example/connection.cc)
 target_link_libraries(connection fabricBased)
 
 add_executable(fabricTest test/fabricTest.cc)
