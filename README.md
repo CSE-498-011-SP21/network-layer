@@ -37,3 +37,8 @@ static_assert(NETWORK_VER_MAJOR == 0
             && NETWORK_VER_PATCH == 1, 
             "Need to ensure using the correct version");
 ```
+
+## Notes
+
+Broadcast primitives on connectionless clients and servers should be used alone
+(i.e. without send and receive ever used on client and server)
