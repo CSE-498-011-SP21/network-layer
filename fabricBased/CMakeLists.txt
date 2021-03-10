@@ -32,6 +32,9 @@ add_executable(connectionlessTest test/connectionlessTest.cc)
 target_link_libraries(connectionlessTest PRIVATE GTest::gmock GTest::gtest GTest::gmock_main GTest::gtest_main fabricBased)
 add_test(connectionlessTest connectionlessTest)
 
+add_executable(connection example/connection.cc)
+target_link_libraries(connection fabricBased)
+
 add_executable(fabricTest test/fabricTest.cc)
 target_link_libraries(fabricTest PRIVATE GTest::gmock GTest::gtest GTest::gmock_main GTest::gtest_main fabricBased)
 add_test(fabricTest fabricTest)
