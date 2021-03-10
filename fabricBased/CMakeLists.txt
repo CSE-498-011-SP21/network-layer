@@ -16,11 +16,17 @@ target_include_directories(fabricBased INTERFACE ${CMAKE_CURRENT_BINARY_DIR}/inc
 target_link_libraries(fabricBased INTERFACE spdlog::spdlog spdlog::spdlog_header_only)
 add_dependencies(fabricBased include_fabricBased)
 
-add_executable(client example/client.cc)
-target_link_libraries(client fabricBased)
+add_executable(rpc_client example/rpc_client.cc)
+target_link_libraries(rpc_client fabricBased)
 
-add_executable(server example/server.cc)
-target_link_libraries(server fabricBased)
+add_executable(rpc_server example/rpc_server.cc)
+target_link_libraries(rpc_server fabricBased)
+
+add_executable(connectionless_client example/connectionless_client.cc)
+target_link_libraries(connectionless_client fabricBased)
+
+add_executable(connectionless_server example/connectionless_server.cc)
+target_link_libraries(connectionless_server fabricBased)
 
 add_executable(connectionlessTest test/connectionlessTest.cc)
 target_link_libraries(connectionlessTest PRIVATE GTest::gmock GTest::gtest GTest::gmock_main GTest::gtest_main fabricBased)

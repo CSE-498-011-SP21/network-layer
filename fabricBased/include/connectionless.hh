@@ -32,8 +32,31 @@ inline void error_check_2(int err, std::string file, int line) {
 
 namespace cse498 {
 
+    /*
+     * Memory region handler type
+     */
+    using mr_t = fid_mr*;
+
+    using addr_t = fi_addr_t;
+
+    /**
+     * Free an memory region handler
+     * @param x memory region handler
+     */
+    void free_mr(mr_t x){
+        ERRCHK(fi_close(&x->fid));
+    }
+
+    /**
+     * ConnectionlessServer
+     */
     class ConnectionlessServer {
     public:
+        /**
+         * Constructor
+         * @param fabricAddress address of server
+         * @param port port to use
+         */
         ConnectionlessServer(const char *fabricAddress, int port) {
 
             done = false;
@@ -108,7 +131,13 @@ namespace cse498 {
             SPDLOG_INFO("All freed");
         }
 
-        void recv_addr(char *buf, size_t size, fi_addr_t &remote_addr) {
+        /**
+         * Recv an address, must be coupled with a send addr
+         * @param buf registered buffer
+         * @param size
+         * @param remote_addr does not need to be pre-allocated
+         */
+        void recv_addr(char *buf, size_t size, addr_t &remote_addr) {
             SPDLOG_TRACE("Server: Posting recv");
 
             ERRCHK(fi_recv(ep, buf, size, nullptr, 0, nullptr));
@@ -125,19 +154,37 @@ namespace cse498 {
             SPDLOG_TRACE("Server: Added client to AV");
         }
 
-        void recv(fi_addr_t remote_addr, char *buf, size_t size) {
+        /**
+         * Recv message
+         * @param remote_addr remote address
+         * @param buf registered buffer
+         * @param size size of buffer
+         */
+        void recv(addr_t remote_addr, char *buf, size_t size) {
             ERRCHK(fi_recv(ep, buf, size, nullptr, remote_addr, nullptr));
             ERRCHK(wait_for_completion(rx_cq));
         }
 
-        void send(fi_addr_t remote_addr, char *buf, size_t size) {
+        /**
+         * Send message
+         * @param remote_addr remote address
+         * @param buf not necessarily registered buffer
+         * @param size size of buffer
+         */
+        void send(addr_t remote_addr, char *buf, size_t size) {
             SPDLOG_TRACE("Server: Posting send");
             ERRCHK(fi_send(ep, buf, size, nullptr, remote_addr, nullptr));
             ERRCHK(wait_for_completion(tx_cq));
             SPDLOG_TRACE("Server: Posting sent");
         }
 
-        void registerMR(char* buf, size_t size, fid_mr*& mr){
+        /**
+         * Register buffer
+         * @param buf buffer to register
+         * @param size size of buffer
+         * @param mr memory region object, not preallocated
+         */
+        void registerMR(char* buf, size_t size, mr_t& mr){
             ERRCHK(fi_mr_reg(domain, buf, size,
                              FI_WRITE | FI_REMOTE_WRITE | FI_READ | FI_REMOTE_READ, 0,
                              0, 0, &mr, NULL));
@@ -176,7 +223,7 @@ namespace cse498 {
     };
 
     /**
-     * RPC client using libfabric
+     * ConnectionlessClient
      */
     class ConnectionlessClient {
     public:
@@ -185,12 +232,12 @@ namespace cse498 {
          * @param address connect to this address
          * @param port connect to this port
          */
-        ConnectionlessClient(const std::string &address, uint16_t port) {
+        ConnectionlessClient(const char* address, uint16_t port) {
             SPDLOG_TRACE("Getting fi provider");
             hints = fi_allocinfo();
             hints->caps = FI_MSG;
             hints->ep_attr->type = FI_EP_RDM;
-            ERRCHK(fi_getinfo(FI_VERSION(1, 6), address.c_str(),
+            ERRCHK(fi_getinfo(FI_VERSION(1, 6), address,
                               std::to_string(port).c_str(), 0, hints, &fi));
             SPDLOG_DEBUG("Using provider: {}", fi->fabric_attr->prov_name);
             SPDLOG_TRACE("Creating fabric object");
@@ -253,6 +300,11 @@ namespace cse498 {
         }
 
 
+        /**
+         * Send address
+         * @param buf any buffer
+         * @param size size of buffeer
+         */
         void send_addr(char *buf, size_t size) {
             size_t addrlen = 0;
             fi_getname(&ep->fid, nullptr, &addrlen);
@@ -271,17 +323,33 @@ namespace cse498 {
             ERRCHK(wait_for_completion(tx_cq));
         }
 
+        /**
+         * Recv message
+         * @param buf registered buffer
+         * @param size size of buffer
+         */
         void recv(char *buf, size_t size) {
             ERRCHK(fi_recv(ep, buf, size, nullptr, remote_addr, nullptr));
             ERRCHK(wait_for_completion(rx_cq));
         }
 
+        /**
+         * Send message
+         * @param buf any buffer
+         * @param size size of buffer
+         */
         void send(char *buf, size_t size) {
             ERRCHK(fi_send(ep, buf, size, nullptr, remote_addr, nullptr));
             ERRCHK(wait_for_completion(tx_cq));
         }
 
-        void registerMR(char* buf, size_t size, fid_mr*& mr){
+        /**
+         * Register memory region
+         * @param buf buffer
+         * @param size size of buffer
+         * @param mr memory region
+         */
+        void registerMR(char* buf, size_t size, mr_t& mr){
             ERRCHK(fi_mr_reg(domain, buf, size,
                              FI_WRITE | FI_REMOTE_WRITE | FI_READ | FI_REMOTE_READ, 0,
                              0, 0, &mr, NULL));

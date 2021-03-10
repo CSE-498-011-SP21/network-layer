@@ -73,7 +73,7 @@ TEST(connectionlessTest, connectionlessTest_send_recv_multiple_clients) {
     while (!done);
 
     auto f2 = std::async([] {
-        std::string addr = "127.0.0.1";
+        const char *addr = "127.0.0.1";
         cse498::ConnectionlessClient c(addr, 8080);
         char *buf = new char[4096];
         fid_mr *mr;
@@ -85,7 +85,7 @@ TEST(connectionlessTest, connectionlessTest_send_recv_multiple_clients) {
         ERRCHK(fi_close(&(mr->fid)));
     });
 
-    std::string addr = "127.0.0.1";
+    const char *addr = "127.0.0.1";
     cse498::ConnectionlessClient c(addr, 8080);
     char *buf = new char[4096];
     fid_mr *mr;
