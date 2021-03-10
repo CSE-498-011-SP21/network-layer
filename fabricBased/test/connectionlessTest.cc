@@ -99,3 +99,43 @@ TEST(connectionlessTest, connectionlessTest_send_recv_multiple_clients) {
     ERRCHK(fi_close(&(mr->fid)));
 
 }
+
+TEST(connectionlessTest, connectionlessTest_broadcast) {
+    spdlog::set_level(spdlog::level::trace); // This setting is missed in the wiki
+
+    std::atomic_bool done;
+
+    done = false;
+
+    auto f = std::async([&done]() {
+        done = true;
+        const char *address = "127.0.0.1";
+        cse498::ConnectionlessServer f(address, 8080);
+        char *buf = new char[4096];
+        fid_mr *mr;
+        f.registerMR(buf, 4096, mr);
+        fi_addr_t addr;
+        f.recv_addr(buf, 4096, addr);
+        buf[0] = 'a';
+        buf[1] = '\0';
+        cse498::reliableBroadcast(f, {addr}, buf, 4096);
+        ERRCHK(fi_close(&(mr->fid)));
+    });
+
+    while (!done);
+
+    std::string addr = "127.0.0.1";
+    cse498::ConnectionlessClient c(addr.c_str(), 8080);
+    char *buf = new char[4096];
+    fid_mr *mr;
+
+    c.registerMR(buf, 4096, mr);
+    c.send_addr(buf, 4096);
+    std::vector<cse498::ConnectionlessClient> v;
+    cse498::reliableBroadcastReceiveFrom(c, v, buf, 4096, [](char *c, size_t s) { return true; },
+                                         [](char *c, size_t s) {});
+
+    f.get();
+    ERRCHK(fi_close(&(mr->fid)));
+
+}
