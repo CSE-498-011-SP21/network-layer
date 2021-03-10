@@ -1,10 +1,9 @@
-//
-// Created by depaulsmiller on 2/18/21.
-//
+/**
+ * @file
+ */
 
 #pragma once
 
-//#include <boost/asio.hpp>
 #include <networklayer/RPC.hh>
 #include <tbb/concurrent_unordered_map.h>
 #include <cassert>

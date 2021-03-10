@@ -32,7 +32,7 @@ TEST(connectionlessTest, connectionlessTest_send_recv) {
     while (!done);
 
     std::string addr = "127.0.0.1";
-    cse498::ConnectionlessClient c(addr, 8080);
+    cse498::ConnectionlessClient c(addr.c_str(), 8080);
     char *buf = new char[4096];
     fid_mr *mr;
 

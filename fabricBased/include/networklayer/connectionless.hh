@@ -1,7 +1,6 @@
-//
-// Created by depaulsmiller on 3/9/21.
-//
-
+/**
+ * @file
+ */
 #include <networklayer/RPC.hh>
 #include <tbb/concurrent_unordered_map.h>
 #include <cassert>
@@ -386,6 +385,41 @@ namespace cse498 {
         fid_ep *ep;
         size_t max_msg_size = 4096;
     };
+
+    /**
+     * Structure for simplifying programming with client and server
+     */
+    struct Connectionless_t {
+
+        /**
+         * Create connectionless type
+         * @param useServer should this be a server?
+         * @param addr address
+         * @param port port
+         */
+        Connectionless_t(bool useServer, char* addr, int port) : isServer(useServer) {
+            if(isServer){
+                this->server = new ConnectionlessServer(addr, port);
+            } else {
+                this->client = new ConnectionlessClient(addr, port);
+            }
+        }
+
+        ~Connectionless_t(){
+            if(isServer){
+                delete server;
+            } else {
+                delete client;
+            }
+        }
+
+        bool isServer;
+        union {
+            ConnectionlessServer* server;
+            ConnectionlessClient* client;
+        };
+    };
+
 }
 
 

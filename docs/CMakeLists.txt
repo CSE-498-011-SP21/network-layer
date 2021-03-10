@@ -1,4 +1,3 @@
-find_package(Doxygen)
 if (DOXYGEN_FOUND)
 
     # set input and output files
@@ -25,6 +24,8 @@ if (DOXYGEN_FOUND)
             COMMENT "Generating docs")
 
     add_custom_target(Doxygen ALL DEPENDS ${DOXYGEN_INDEX_FILE})
+
+    install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/doxygen/html DESTINATION share/doc)
 
 else (DOXYGEN_FOUND)
     message("Doxygen need to be installed to generate the doxygen documentation")

@@ -1,20 +1,12 @@
 find_package(TBB CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
 
-file(GLOB_RECURSE PUBLIC_HEADERS_FABRIC include/*)
-
-add_custom_target(include_fabricBased ALL
-        COMMAND ${CMAKE_COMMAND} -E copy_directory
-        ${CMAKE_CURRENT_SOURCE_DIR}/include/
-        ${CMAKE_CURRENT_BINARY_DIR}/include/networklayer/
-        DEPENDS ${PUBLIC_HEADERS_FABRIC}
-        )
-
 add_library(fabricBased INTERFACE)
 target_link_libraries(fabricBased INTERFACE rpc fabric pthread TBB::tbb)
-target_include_directories(fabricBased INTERFACE ${CMAKE_CURRENT_BINARY_DIR}/include)
+target_include_directories(fabricBased INTERFACE "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>" "$<INSTALL_INTERFACE:include>")
 target_link_libraries(fabricBased INTERFACE spdlog::spdlog spdlog::spdlog_header_only)
-add_dependencies(fabricBased include_fabricBased)
+
+install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include DESTINATION include)
 
 add_executable(rpc_client example/rpc_client.cc)
 target_link_libraries(rpc_client fabricBased)
