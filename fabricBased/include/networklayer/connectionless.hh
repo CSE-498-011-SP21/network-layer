@@ -34,7 +34,7 @@ namespace cse498 {
     /*
      * Memory region handler type
      */
-    using mr_t = fid_mr*;
+    using mr_t = fid_mr *;
 
     using addr_t = fi_addr_t;
 
@@ -42,7 +42,7 @@ namespace cse498 {
      * Free an memory region handler
      * @param x memory region handler
      */
-    void free_mr(mr_t x){
+    void free_mr(mr_t x) {
         ERRCHK(fi_close(&x->fid));
     }
 
@@ -183,7 +183,7 @@ namespace cse498 {
          * @param size size of buffer
          * @param mr memory region object, not preallocated
          */
-        void registerMR(char* buf, size_t size, mr_t& mr){
+        void registerMR(char *buf, size_t size, mr_t &mr) {
             ERRCHK(fi_mr_reg(domain, buf, size,
                              FI_WRITE | FI_REMOTE_WRITE | FI_READ | FI_REMOTE_READ, 0,
                              0, 0, &mr, NULL));
@@ -210,7 +210,7 @@ namespace cse498 {
         }
 
         fi_info *fi, *hints;
-        fid_domain* domain;
+        fid_domain *domain;
         fid_fabric *fabric;
         fi_cq_attr cq_attr;
         fi_av_attr av_attr;
@@ -231,7 +231,7 @@ namespace cse498 {
          * @param address connect to this address
          * @param port connect to this port
          */
-        ConnectionlessClient(const char* address, uint16_t port) {
+        ConnectionlessClient(const char *address, uint16_t port) {
             SPDLOG_TRACE("Getting fi provider");
             hints = fi_allocinfo();
             hints->caps = FI_MSG;
@@ -348,7 +348,7 @@ namespace cse498 {
          * @param size size of buffer
          * @param mr memory region
          */
-        void registerMR(char* buf, size_t size, mr_t& mr){
+        void registerMR(char *buf, size_t size, mr_t &mr) {
             ERRCHK(fi_mr_reg(domain, buf, size,
                              FI_WRITE | FI_REMOTE_WRITE | FI_READ | FI_REMOTE_READ, 0,
                              0, 0, &mr, NULL));
@@ -376,7 +376,7 @@ namespace cse498 {
 
         fi_addr_t remote_addr;
         fi_info *fi, *hints;
-        fid_domain* domain;
+        fid_domain *domain;
         fid_fabric *fabric;
         fi_cq_attr cq_attr;
         fi_av_attr av_attr;
@@ -397,16 +397,16 @@ namespace cse498 {
          * @param addr address
          * @param port port
          */
-        Connectionless_t(bool useServer, char* addr, int port) : isServer(useServer) {
-            if(isServer){
+        Connectionless_t(bool useServer, char *addr, int port) : isServer(useServer) {
+            if (isServer) {
                 this->server = new ConnectionlessServer(addr, port);
             } else {
                 this->client = new ConnectionlessClient(addr, port);
             }
         }
 
-        ~Connectionless_t(){
-            if(isServer){
+        ~Connectionless_t() {
+            if (isServer) {
                 delete server;
             } else {
                 delete client;
@@ -415,10 +415,106 @@ namespace cse498 {
 
         bool isServer;
         union {
-            ConnectionlessServer* server;
-            ConnectionlessClient* client;
+            ConnectionlessServer *server;
+            ConnectionlessClient *client;
         };
     };
+
+
+    /**
+     * Performs best effort broadcast
+     * @param c server
+     * @param addresses addresses to send to
+     * @param message message to send
+     * @param messageSize size of message
+     */
+    void bestEffortBroadcast(ConnectionlessServer &c, const std::vector<addr_t> &addresses, char *message,
+                             size_t messageSize) {
+        for (auto &a : addresses) {
+            c.send(a, message, messageSize);
+        }
+    }
+
+    /**
+     * Performs best effort broadcast
+     * @param clients clients to send to
+     * @param message message to send
+     * @param messageSize size of message
+     */
+    void bestEffortBroadcast(std::vector<ConnectionlessClient> &clients, char *message, size_t messageSize) {
+        for (auto &c : clients) {
+            c.send(message, messageSize);
+        }
+    }
+
+    /**
+     * Performs best effort broadcast recieve from client
+     * @param clients clients to recv from
+     * @param buf buffer
+     * @param sizeOfBuf buffer size
+     */
+    void bestEffortBroadcastReceiveFrom(ConnectionlessClient &client, char *buf, size_t sizeOfBuf) {
+        client.recv(buf, sizeOfBuf);
+    }
+
+    /**
+     * Performs best effort broadcast recieve from client
+     * @param c connection to recv from
+     * @param address address to recv from
+     * @param buf buffer
+     * @param sizeOfBuf buffer size
+     */
+    void bestEffortBroadcastReceiveFrom(ConnectionlessServer &c, addr_t address, char *buf, size_t sizeOfBuf) {
+        c.recv(address, buf, sizeOfBuf);
+    }
+
+    /**
+     * Reliably broadcast from a server
+     * @param c server
+     * @param addresses to send to
+     * @param message to send
+     * @param messageSize size of message
+     */
+    void reliableBroadcast(ConnectionlessServer &c, const std::vector<addr_t> &addresses, char *message,
+                           size_t messageSize) {
+        bestEffortBroadcast(c, addresses, message, messageSize);
+    }
+
+
+    /**
+     * Reliably broadcast from a server
+     * @param clients clients to send to
+     * @param message message to send
+     * @param messageSize size of message
+     */
+    void reliableBroadcast(std::vector<ConnectionlessClient> &clients, char *message, size_t messageSize) {
+        bestEffortBroadcast(clients, message, messageSize);
+    }
+
+    /**
+     * Receive from
+     * @param receiveFrom node to receive from
+     * @param clients clients to send to
+     * @param buf buffer to use (registered)
+     * @param bufSize size of buffer to use
+     * @param checkIfReceivedBefore function to check if the message has been received before
+     * @param markAsReceived function to mark a message as received
+     * @return true if it has not been received before
+     */
+    bool reliableBroadcastReceiveFrom(ConnectionlessClient &receiveFrom, std::vector<ConnectionlessClient> &clients,
+                                      char *buf,
+                                      size_t bufSize, const std::function<bool(char *, size_t)>& checkIfReceivedBefore,
+                                      const std::function<void(char *, size_t)>& markAsReceived) {
+
+        receiveFrom.recv(buf, bufSize);
+
+        if (!checkIfReceivedBefore(buf, bufSize)) {
+            bestEffortBroadcast(clients, buf, bufSize);
+            markAsReceived(buf, bufSize);
+            return true;
+        }
+        return false;
+    }
 
 }
 
