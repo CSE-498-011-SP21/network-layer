@@ -115,6 +115,9 @@ namespace cse498 {
 				fi_close(&ep->fid);
 				fi_close(&rx_cntr->fid);
 				fi_close(&tx_cntr->fid);
+				if (mr != NULL) {
+					SAFE_CALL(fi_close(&mr->fid));
+				}
 			}
 
 			/**
@@ -169,6 +172,28 @@ namespace cse498 {
 				SAFE_CALL(fi_recv(ep, buf, max_len, nullptr, 0, nullptr));
 				SAFE_CALL(fi_cntr_wait(rx_cntr, init + 1, -1));
 			}
+
+			/**
+			 * Registers a location in memory. Only one can be registered at a time. 
+			 **/
+			void mr_reg(char *buf, size_t len, uint64_t access, uint64_t key) {
+				if (mr != NULL) {
+					SAFE_CALL(fi_close(&mr->fid));
+				}
+				SAFE_CALL(fi_mr_reg(domain, buf, len, access, 0, key, 0, &mr, nullptr));
+			}
+
+			void write(const char *buf, size_t len, uint64_t key) {
+				uint64_t init = fi_cntr_read(rr_cntr);
+				SAFE_CALL(fi_write(ep, buf, len, nullptr, 0, 0, key, nullptr));
+				while (fi_cntr_read(rr_cntr) < init + 1) {
+					if (fi_cntr_readerr(rr_cntr) > 0) {
+						SPDLOG_CRITICAL("ERROR WITH WRITE");
+						exit(1);
+					}
+				}
+				// SAFE_CALL(fi_cntr_wait(rr_cntr, init + 1, -1));
+			}
 		private:
 			const char *DEFAULT_PORT = "8080";
 			const size_t MAX_MSG_SIZE = 4096;
@@ -180,7 +205,8 @@ namespace cse498 {
 			fid_domain *domain;
 			fid_eq *eq;
 			fid_ep *ep;
-			fid_cntr *tx_cntr, *rx_cntr;
+			fid_cntr *tx_cntr, *rx_cntr, *rr_cntr;
+			fid_mr *mr;
 
 			/**
 			 * Allocates hints, and sets the correct settings for the connection. 
@@ -219,6 +245,8 @@ namespace cse498 {
 				cntr_attr.wait_obj = FI_WAIT_UNSPEC;
 				SAFE_CALL(fi_cntr_open(domain, &cntr_attr, &rx_cntr, nullptr));
 				SAFE_CALL(fi_cntr_open(domain, &cntr_attr, &tx_cntr, nullptr));
+				SAFE_CALL(fi_cntr_open(domain, &cntr_attr, &rr_cntr, nullptr));
+				SAFE_CALL(fi_ep_bind(ep, &rr_cntr->fid, FI_REMOTE_WRITE | FI_WRITE));
 				SAFE_CALL(fi_ep_bind(ep, &rx_cntr->fid, FI_RECV));
 				SAFE_CALL(fi_ep_bind(ep, &tx_cntr->fid, FI_SEND));
 			}
