@@ -45,7 +45,6 @@ namespace cse498 {
 				SPDLOG_TRACE("Creating fabric");
 				SAFE_CALL(fi_fabric(info->fabric_attr, &fab, nullptr));
 
-				// Server
 				open_eq();
 
 				fid_pep *pep;
@@ -119,43 +118,45 @@ namespace cse498 {
 			}
 
 			/**
-			 * Sends a message through the endpoint, blocking until completion
+			 * Sends a message through the endpoint, blocking until completion. This will
+			 * also block until all previous messages sent by async_send are completed as
+			 * well (this means you can touch any data buffer from any previous send after
+			 * calling this)
 			 * 
 			 * @param data The data to send
 			 * @param size The size of the data
 			 **/
-			void ssend(const char *data, const size_t size) {
+			void wait_send(const char *data, const size_t size) {
+				async_send(data, size);
+				wait_for_sends();
+			}
+
+			/**
+			 * This adds a message to the queue to be sent. It does not block. You cannot
+			 * touch the data buffer until after wait_for_sends or wait_send is called,
+			 * otherwise it may send the modified data buffer which is very bad (you should
+			 * call one of those also before the program completes otherwise messages from
+			 * async_send may not have been sent). 
+			 * 
+			 * @param data The data to send
+			 * @param size The size of the data
+			 **/
+			void async_send(const char *data, const size_t size) {
 				if (size > MAX_MSG_SIZE) {
 					SPDLOG_CRITICAL("Too large of a message!");
 					exit(1);
 				}
-				uint64_t init = fi_cntr_read(tx_cntr);
+				++msg_sends;
 				SAFE_CALL(fi_send(ep, data, size, nullptr, 0, nullptr));
-				SAFE_CALL(fi_cntr_wait(tx_cntr, init + 1, -1));
 			}
 
-			// There is a safe way to write this method, but I don't want to do it unless I'm 
-			// confident it will be helpful (it would complicate the code, which I'd rather not
-			// do unless I'm confident it will get use)
-			// /**
-			//  * Sends a message through the endpoint (no blocking). The purpose of this is to
-			//  * be able to run other code unrelated to networking while you are waiting for 
-			//  * the message to send. 
-			//  * 
-			//  * !IMPORTANT! If you are using this then you can't touch the data pointer until 
-			//  * the message is sent. YOU MUST RUN FINISH_SEND BEFORE DOING ANYTHING ELSE WITH 
-			//  * THIS CONNECTION
-			//  * 
-			//  * @param data The data to send
-			//  * @param size The size of the data
-			//  **/
-			// void send(const char *data, const size_t size) {
-			// 	if (size > MAX_MSG_SIZE) {
-			// 		SPDLOG_CRITICAL("Too large of a message!");
-			// 		exit(1);
-			// 	}
-			// 	SAFE_CALL(fi_send(ep, data, size, nullptr, 0, nullptr));
-			// }
+			/**
+			 * Ensures all the previous sends were completed. This means after calling this
+			 * you can modify the data buffer from async_send. 
+			 **/
+			void wait_for_sends() {
+				SAFE_CALL(fi_cntr_wait(tx_cntr, msg_sends, -1));
+			}
 
 			/**
 			 * Blocks until it receives a message from the endpoint. 
@@ -163,7 +164,7 @@ namespace cse498 {
 			 * @param buf The buffer to store the message data in
 			 * @param max_len The maximum length of the message (should be <= MAX_MSG_SIZE)
 			 **/
-			void srecv(char *buf, size_t max_len) {
+			void wait_recv(char *buf, size_t max_len) {
 				uint64_t init = fi_cntr_read(rx_cntr);
 				SAFE_CALL(fi_recv(ep, buf, max_len, nullptr, 0, nullptr));
 				SAFE_CALL(fi_cntr_wait(rx_cntr, init + 1, -1));
@@ -171,6 +172,7 @@ namespace cse498 {
 		private:
 			const char *DEFAULT_PORT = "8080";
 			const size_t MAX_MSG_SIZE = 4096;
+			uint64_t msg_sends = 0;
 
 			// These need to be closed by fabric
 			fi_info *hints, *info;
