@@ -155,7 +155,7 @@ namespace cse498 {
 			 * you can modify the data buffer from async_send. 
 			 **/
 			void wait_for_sends() {
-				SAFE_CALL(fi_cntr_wait(tx_cntr, msg_sends, -1));
+				SAFE_CALL(wait_for_counter(tx_cntr, msg_sends));
 			}
 
 			/**
@@ -167,7 +167,7 @@ namespace cse498 {
 			void wait_recv(char *buf, size_t max_len) {
 				uint64_t init = fi_cntr_read(rx_cntr);
 				SAFE_CALL(fi_recv(ep, buf, max_len, nullptr, 0, nullptr));
-				SAFE_CALL(fi_cntr_wait(rx_cntr, init + 1, -1));
+				SAFE_CALL(wait_for_counter(rx_cntr, init + 1));
 			}
 		private:
 			const char *DEFAULT_PORT = "8080";
@@ -181,6 +181,26 @@ namespace cse498 {
 			fid_eq *eq;
 			fid_ep *ep;
 			fid_cntr *tx_cntr, *rx_cntr;
+
+			/**
+			 * Waits for the threshold to be reached on a counter. 
+			 * @param cntr The counter to wait on.
+			 * @param threshold The value to wait to reach (>= threshold)
+			 * @return -1 on error, 0 otherwise (counters aren't great with reporting specific errors unfortunately)
+			 */
+			int wait_for_counter(fid_cntr *cntr, uint64_t threshold) {
+				uint64_t cntr_val;
+				while (1) {
+					cntr_val = SAFE_CALL(fi_cntr_read(cntr));
+					if (cntr_val >= threshold) {
+						return 0;
+					}
+					if (SAFE_CALL(fi_cntr_readerr(cntr)) > 0) {
+						SPDLOG_WARN("There was an error on the counter");
+						return -1;
+					}
+				}
+			}
 
 			/**
 			 * Allocates hints, and sets the correct settings for the connection. 
@@ -216,7 +236,7 @@ namespace cse498 {
 				SPDLOG_TRACE("Opening rx and tx counters");
 				fi_cntr_attr cntr_attr = {};
 				cntr_attr.events = FI_CNTR_EVENTS_COMP;
-				cntr_attr.wait_obj = FI_WAIT_UNSPEC;
+				cntr_attr.wait_obj = FI_WAIT_NONE;
 				SAFE_CALL(fi_cntr_open(domain, &cntr_attr, &rx_cntr, nullptr));
 				SAFE_CALL(fi_cntr_open(domain, &cntr_attr, &tx_cntr, nullptr));
 				SAFE_CALL(fi_ep_bind(ep, &rx_cntr->fid, FI_RECV));
