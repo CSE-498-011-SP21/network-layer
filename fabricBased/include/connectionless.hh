@@ -34,7 +34,7 @@ namespace cse498 {
 
     class ConnectionlessServer {
     public:
-        ConnectionlessServer(const char *fabricAddress) {
+        ConnectionlessServer(const char *fabricAddress, int port) {
 
             done = false;
 
@@ -44,7 +44,7 @@ namespace cse498 {
             hints->ep_attr->type = FI_EP_RDM;
 
             ERRCHK(fi_getinfo(FI_VERSION(1, 6), fabricAddress,
-                              std::to_string(DEFAULT_PORT).c_str(), FI_SOURCE, hints, &fi));
+                              std::to_string(port).c_str(), FI_SOURCE, hints, &fi));
             SPDLOG_DEBUG("Using provider: {0}", fi->fabric_attr->prov_name);
             SPDLOG_DEBUG("SRC ADDR: {0}", fi->fabric_attr->name);
             SPDLOG_TRACE("Creating fabric object");
@@ -109,17 +109,20 @@ namespace cse498 {
         }
 
         void recv_addr(char *buf, size_t size, fi_addr_t &remote_addr) {
+            SPDLOG_TRACE("Server: Posting recv");
+
             ERRCHK(fi_recv(ep, buf, size, nullptr, 0, nullptr));
             ERRCHK(wait_for_completion(rx_cq));
-            uint64_t sizeOfAddress = *(uint64_t *) remote_buf;
+            uint64_t sizeOfAddress = *(uint64_t *) buf;
 
             SPDLOG_TRACE("Server: Adding client to AV");
 
-            if (1 != fi_av_insert(av, remote_buf + sizeof(uint64_t), 1, &remote_addr, 0, NULL)) {
+            if (1 != fi_av_insert(av, buf + sizeof(uint64_t), 1, &remote_addr, 0, NULL)) {
                 std::cerr << "ERROR - fi_av_insert did not return 1" << std::endl;
                 perror("Error");
                 exit(1);
             }
+            SPDLOG_TRACE("Server: Added client to AV");
         }
 
         void recv(fi_addr_t remote_addr, char *buf, size_t size) {
@@ -128,11 +131,13 @@ namespace cse498 {
         }
 
         void send(fi_addr_t remote_addr, char *buf, size_t size) {
-            ERRCHK(fi_send(ep, local_buf, size, nullptr, remote_addr, nullptr));
+            SPDLOG_TRACE("Server: Posting send");
+            ERRCHK(fi_send(ep, buf, size, nullptr, remote_addr, nullptr));
             ERRCHK(wait_for_completion(tx_cq));
+            SPDLOG_TRACE("Server: Posting sent");
         }
 
-        void registerMR(char* buf, size_t size, fid_mr& mr){
+        void registerMR(char* buf, size_t size, fid_mr*& mr){
             ERRCHK(fi_mr_reg(domain, buf, size,
                              FI_WRITE | FI_REMOTE_WRITE | FI_READ | FI_REMOTE_READ, 0,
                              0, 0, &mr, NULL));
@@ -159,6 +164,7 @@ namespace cse498 {
         }
 
         fi_info *fi, *hints;
+        fid_domain* domain;
         fid_fabric *fabric;
         fi_cq_attr cq_attr;
         fi_av_attr av_attr;
@@ -185,7 +191,7 @@ namespace cse498 {
             hints->caps = FI_MSG;
             hints->ep_attr->type = FI_EP_RDM;
             ERRCHK(fi_getinfo(FI_VERSION(1, 6), address.c_str(),
-                              std::to_string(DEFAULT_PORT).c_str(), 0, hints, &fi));
+                              std::to_string(port).c_str(), 0, hints, &fi));
             SPDLOG_DEBUG("Using provider: {}", fi->fabric_attr->prov_name);
             SPDLOG_TRACE("Creating fabric object");
             ERRCHK(fi_fabric(fi->fabric_attr, &fabric, nullptr));
@@ -237,7 +243,6 @@ namespace cse498 {
             fi_freeinfo(hints);
             fi_freeinfo(fi);
 
-            ERRCHK(fi_close(&mr->fid));
             ERRCHK(fi_close(&ep->fid));
             ERRCHK(fi_close(&tx_cq->fid));
             ERRCHK(fi_close(&rx_cq->fid));
@@ -258,9 +263,11 @@ namespace cse498 {
 
             memcpy(buf, &addrlen, sizeof(uint64_t));
             memcpy(buf + sizeof(uint64_t), addr, addrlen);
-            assert(size <= sizeof(uint64_t) + addrlen);
+            SPDLOG_DEBUG("Client: Sending {0}B in {1}B buffer", sizeof(uint64_t) + addrlen, size);
 
-            ERRCHK(fi_send(ep, buf, buf + sizeof(uint64_t) + addrlen, nullptr, remote_addr, nullptr));
+            assert(size >= (sizeof(uint64_t) + addrlen));
+
+            ERRCHK(fi_send(ep, buf, sizeof(uint64_t) + addrlen, nullptr, remote_addr, nullptr));
             ERRCHK(wait_for_completion(tx_cq));
         }
 
@@ -270,11 +277,11 @@ namespace cse498 {
         }
 
         void send(char *buf, size_t size) {
-            ERRCHK(fi_send(ep, local_buf, size, nullptr, remote_addr, nullptr));
+            ERRCHK(fi_send(ep, buf, size, nullptr, remote_addr, nullptr));
             ERRCHK(wait_for_completion(tx_cq));
         }
 
-        void registerMR(char* buf, size_t size, fid_mr& mr){
+        void registerMR(char* buf, size_t size, fid_mr*& mr){
             ERRCHK(fi_mr_reg(domain, buf, size,
                              FI_WRITE | FI_REMOTE_WRITE | FI_READ | FI_REMOTE_READ, 0,
                              0, 0, &mr, NULL));
@@ -302,6 +309,7 @@ namespace cse498 {
 
         fi_addr_t remote_addr;
         fi_info *fi, *hints;
+        fid_domain* domain;
         fid_fabric *fabric;
         fi_cq_attr cq_attr;
         fi_av_attr av_attr;
@@ -309,7 +317,6 @@ namespace cse498 {
         fid_cq *tx_cq, *rx_cq;
         fid_ep *ep;
         size_t max_msg_size = 4096;
-        fid_mr *mr;
     };
 }
 
