@@ -1,7 +1,6 @@
 #define SPDLOG_ACTIVE_LEVEL SPDLOG_LEVEL_TRACE
 
-#include "../include/connection.hh"
-
+#include <networklayer/connection.hh>
 #include <iostream>
 
 /**
