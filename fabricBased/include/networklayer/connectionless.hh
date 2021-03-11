@@ -1,7 +1,6 @@
 /**
  * @file
  */
-#include <networklayer/RPC.hh>
 #include <tbb/concurrent_unordered_map.h>
 #include <cassert>
 #include <rdma/fabric.h>

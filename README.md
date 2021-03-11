@@ -4,7 +4,7 @@ Network layer code.
 ## Requirements
 
 - gtest
-- libfabric 1.6
+- libfabric 1.9.1
 - tbb
 - doxygen optional to build documentation
 
@@ -14,7 +14,7 @@ git submodule init
 git submodule update
 ./vcpkg/bootstrap-vcpkg.sh
 
-# Use brew, apt, or yum to install libfabric
+# Install libfabric 1.9.1
 
 ./vcpkg/vcpkg install gtest tbb
 
