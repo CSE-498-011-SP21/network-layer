@@ -27,6 +27,12 @@ inline void error_check_2(int err, std::string file, int line) {
     }
 }
 
+#define MAJOR_VERSION_USED 1
+#define MINOR_VERSION_USED 9
+
+static_assert(FI_MAJOR_VERSION == MAJOR_VERSION_USED && FI_MINOR_VERSION == MINOR_VERSION_USED,
+              "Rely on libfabric 1.9");
+
 namespace cse498 {
 
     /*
@@ -54,7 +60,7 @@ namespace cse498 {
          * @param fabricAddress address of server
          * @param port port to use
          */
-        ConnectionlessServer(const char *fabricAddress, int port) {
+        ConnectionlessServer(const char *fabricAddress, int port, uint32_t protocol = FI_PROTO_SOCK_TCP) {
 
             done = false;
 
@@ -62,8 +68,9 @@ namespace cse498 {
             hints = fi_allocinfo();
             hints->caps = FI_MSG;
             hints->ep_attr->type = FI_EP_RDM;
+            hints->ep_attr->protocol = protocol;
 
-            ERRCHK(fi_getinfo(FI_VERSION(1, 6), fabricAddress,
+            ERRCHK(fi_getinfo(FI_VERSION(MAJOR_VERSION_USED, MINOR_VERSION_USED), fabricAddress,
                               std::to_string(port).c_str(), FI_SOURCE, hints, &fi));
             LOG2<DEBUG>() << "Using provider: " << fi->fabric_attr->prov_name;
             LOG2<DEBUG>() << "SRC ADDR: " << fi->fabric_attr->name;
@@ -138,6 +145,31 @@ namespace cse498 {
             LOG2<TRACE>() << "Server: Posting recv";
 
             ERRCHK(fi_recv(ep, buf, size, nullptr, 0, nullptr));
+            ERRCHK(wait_for_completion(rx_cq));
+            uint64_t sizeOfAddress = *(uint64_t *) buf;
+
+            LOG2<TRACE>() << "Server: Adding client to AV";
+
+            if (1 != fi_av_insert(av, buf + sizeof(uint64_t), 1, &remote_addr, 0, NULL)) {
+                std::cerr << "ERROR - fi_av_insert did not return 1" << std::endl;
+                perror("Error");
+                exit(1);
+            }
+            LOG2<TRACE>() << "Server: Added client to AV";
+        }
+
+        /**
+         * Recv an address, must be coupled with a send addr
+         * @param buf registered buffer
+         * @param size
+         * @param remote_addr does not need to be pre-allocated
+         */
+        inline void async_recv_addr(char *buf, size_t size, addr_t &remote_addr) {
+            DO_LOG(DEBUG) << "Server: Posting recv";
+            ERRCHK(fi_recv(ep, buf, size, nullptr, 0, nullptr));
+        }
+
+        inline void wait_recv_addr(char *buf, size_t size, addr_t &remote_addr) {
             ERRCHK(wait_for_completion(rx_cq));
             uint64_t sizeOfAddress = *(uint64_t *) buf;
 
@@ -229,12 +261,14 @@ namespace cse498 {
          * @param address connect to this address
          * @param port connect to this port
          */
-        ConnectionlessClient(const char *address, uint16_t port) {
+        ConnectionlessClient(const char *address, uint16_t port, uint32_t protocol = FI_PROTO_SOCK_TCP) {
             LOG2<TRACE>() << ("Getting fi provider");
             hints = fi_allocinfo();
             hints->caps = FI_MSG;
             hints->ep_attr->type = FI_EP_RDM;
-            ERRCHK(fi_getinfo(FI_VERSION(1, 6), address,
+            hints->ep_attr->protocol = protocol;
+
+            ERRCHK(fi_getinfo(FI_VERSION(MAJOR_VERSION_USED, MINOR_VERSION_USED), address,
                               std::to_string(port).c_str(), 0, hints, &fi));
             LOG2<TRACE>() << "Using provider: " << fi->fabric_attr->prov_name;
             LOG2<TRACE>() << "Creating fabric object";
@@ -395,11 +429,12 @@ namespace cse498 {
          * @param addr address
          * @param port port
          */
-        Connectionless_t(bool useServer, char *addr, int port) : isServer(useServer) {
+        Connectionless_t(bool useServer, char *addr, int port, uint32_t protocol = FI_PROTO_SOCK_TCP) : isServer(
+                useServer) {
             if (isServer) {
-                this->server = new ConnectionlessServer(addr, port);
+                this->server = new ConnectionlessServer(addr, port, protocol);
             } else {
-                this->client = new ConnectionlessClient(addr, port);
+                this->client = new ConnectionlessClient(addr, port, protocol);
             }
         }
 

@@ -26,7 +26,10 @@ inline int callCheck(int err, const char *file, int line, bool abort = true) {
     return err;
 }
 
-static_assert(FI_MAJOR_VERSION == 1 && FI_MINOR_VERSION == 6, "We require libfabric 1.6");
+#define MAJOR_VERSION_USED 1
+#define MINOR_VERSION_USED 9
+
+static_assert(FI_MAJOR_VERSION == MAJOR_VERSION_USED && FI_MINOR_VERSION == MINOR_VERSION_USED, "Rely on libfabric 1.9");
 
 namespace cse498 {
     /**
@@ -41,7 +44,7 @@ namespace cse498 {
             create_hints();
 
             LOG2<DEBUG>() << "Initializing passive connection";
-            SAFE_CALL(fi_getinfo(FI_VERSION(1, 6), nullptr, DEFAULT_PORT, FI_SOURCE, hints,
+            SAFE_CALL(fi_getinfo(FI_VERSION(MAJOR_VERSION_USED, MINOR_VERSION_USED), nullptr, DEFAULT_PORT, FI_SOURCE, hints,
                                  &info)); // TODO I don't beleive FI_SOURCE does anything. Should try to delete.
 
             LOG2<TRACE>() << "Creating fabric";
@@ -93,7 +96,7 @@ namespace cse498 {
             create_hints();
 
             LOG2<DEBUG>() << "Initializing client";
-            SAFE_CALL(fi_getinfo(FI_VERSION(1, 6), addr, DEFAULT_PORT, 0, hints, &info));
+            SAFE_CALL(fi_getinfo(FI_VERSION(MAJOR_VERSION_USED, MINOR_VERSION_USED), addr, DEFAULT_PORT, 0, hints, &info));
 
             SAFE_CALL(fi_fabric(info->fabric_attr, &fab, nullptr));
 
