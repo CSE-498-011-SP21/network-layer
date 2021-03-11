@@ -42,6 +42,6 @@ set(CPACK_SOURCE_IGNORE_FILES
         /.*build.*
         /\\\\.DS_Store
         )
-set(CPACK_DEBIAN_PACKAGE_DEPENDS "libc6, libfabric1")
+set(CPACK_DEBIAN_PACKAGE_DEPENDS "libc6, libfabric")
 
 include(CPack)
