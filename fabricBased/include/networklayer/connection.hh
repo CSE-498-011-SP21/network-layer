@@ -29,7 +29,12 @@ inline int callCheck(int err, const char *file, int line, bool abort = true) {
 #define MAJOR_VERSION_USED 1
 #define MINOR_VERSION_USED 9
 
-static_assert(FI_MAJOR_VERSION == MAJOR_VERSION_USED && FI_MINOR_VERSION == MINOR_VERSION_USED, "Rely on libfabric 1.9");
+static_assert(FI_MAJOR_VERSION == MAJOR_VERSION_USED && FI_MINOR_VERSION >= MINOR_VERSION_USED,
+              "Rely on libfabric 1.9");
+
+#if FI_MINOR_VERSION > MINOR_VERSION_USED
+#warning "We test on libfabric 1.9 and do not guarentee it will work if semantics are broken in later versions."
+#endif
 
 namespace cse498 {
     /**
