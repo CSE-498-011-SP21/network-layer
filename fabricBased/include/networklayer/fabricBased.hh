@@ -30,7 +30,10 @@ inline void error_check(int err, std::string file, int line) {
     }
 }
 
-static_assert(FI_MAJOR_VERSION == 1 && FI_MINOR_VERSION == 6, "Rely on libfabric 1.6");
+#define MAJOR_VERSION_USED 1
+#define MINOR_VERSION_USED 9
+
+static_assert(FI_MAJOR_VERSION == MAJOR_VERSION_USED && FI_MINOR_VERSION == MINOR_VERSION_USED, "Rely on libfabric 1.9");
 
 namespace cse498 {
 
@@ -96,7 +99,7 @@ namespace cse498 {
          * Create server. Default mapping of function 0 to shutdown.
          * @param fabricAddress Utilize this address
          */
-        FabricRPC(const char *fabricAddress) : fnMap(
+        FabricRPC(const char *fabricAddress, uint32_t protocol = FI_PROTO_SOCK_TCP) : fnMap(
                 new std::unordered_map<uint64_t, std::function<pack_t(pack_t)>>()) {
 
             done = false;
@@ -109,8 +112,9 @@ namespace cse498 {
             hints = fi_allocinfo();
             hints->caps = FI_MSG;
             hints->ep_attr->type = FI_EP_RDM;
+            hints->ep_attr->protocol = protocol;
 
-            ERRCHK(fi_getinfo(FI_VERSION(1, 6), fabricAddress,
+            ERRCHK(fi_getinfo(FI_VERSION(MAJOR_VERSION_USED, MINOR_VERSION_USED), fabricAddress,
                               std::to_string(DEFAULT_PORT).c_str(), FI_SOURCE, hints, &fi));
             ERRCHK(fi_fabric(fi->fabric_attr, &fabric, nullptr));
             ERRCHK(fi_domain(fabric, fi, &domain, NULL));
@@ -259,11 +263,13 @@ namespace cse498 {
          * @param address connect to this address
          * @param port connect to this port
          */
-        FabricRPClient(const std::string &address, uint16_t port) {
+        FabricRPClient(const std::string &address, uint16_t port, uint32_t protocol = FI_PROTO_SOCK_TCP) {
             hints = fi_allocinfo();
             hints->caps = FI_MSG;
             hints->ep_attr->type = FI_EP_RDM;
-            ERRCHK(fi_getinfo(FI_VERSION(1, 6), address.c_str(),
+            hints->ep_attr->protocol = protocol;
+
+            ERRCHK(fi_getinfo(FI_VERSION(MAJOR_VERSION_USED, MINOR_VERSION_USED), address.c_str(),
                               std::to_string(DEFAULT_PORT).c_str(), 0, hints, &fi));
             ERRCHK(fi_fabric(fi->fabric_attr, &fabric, nullptr));
             ERRCHK(fi_domain(fabric, fi, &domain, NULL));

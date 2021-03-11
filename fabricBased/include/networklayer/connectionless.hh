@@ -27,6 +27,22 @@ inline void error_check_2(int err, std::string file, int line) {
     }
 }
 
+#define ERRREPORT(x) error_report((x), __FILE__, __LINE__);
+
+inline bool error_report(int err, std::string file, int line) {
+    if (err) {
+        LOG2<ERROR>() << "ERROR (" << err << "): " << fi_strerror(-err) << " " << file << ":" << line;
+        return false;
+    }
+    return true;
+}
+
+#define MAJOR_VERSION_USED 1
+#define MINOR_VERSION_USED 9
+
+static_assert(FI_MAJOR_VERSION == MAJOR_VERSION_USED && FI_MINOR_VERSION == MINOR_VERSION_USED,
+              "Rely on libfabric 1.9");
+
 namespace cse498 {
 
     /*
@@ -54,7 +70,7 @@ namespace cse498 {
          * @param fabricAddress address of server
          * @param port port to use
          */
-        ConnectionlessServer(const char *fabricAddress, int port) {
+        ConnectionlessServer(const char *fabricAddress, int port, uint32_t protocol = FI_PROTO_SOCK_TCP) {
 
             done = false;
 
@@ -62,8 +78,9 @@ namespace cse498 {
             hints = fi_allocinfo();
             hints->caps = FI_MSG;
             hints->ep_attr->type = FI_EP_RDM;
+            hints->ep_attr->protocol = protocol;
 
-            ERRCHK(fi_getinfo(FI_VERSION(1, 6), fabricAddress,
+            ERRCHK(fi_getinfo(FI_VERSION(MAJOR_VERSION_USED, MINOR_VERSION_USED), fabricAddress,
                               std::to_string(port).c_str(), FI_SOURCE, hints, &fi));
             LOG2<DEBUG>() << "Using provider: " << fi->fabric_attr->prov_name;
             LOG2<DEBUG>() << "SRC ADDR: " << fi->fabric_attr->name;
@@ -152,6 +169,31 @@ namespace cse498 {
         }
 
         /**
+         * Recv an address, must be coupled with a send addr
+         * @param buf registered buffer
+         * @param size
+         * @param remote_addr does not need to be pre-allocated
+         */
+        inline void async_recv_addr(char *buf, size_t size, addr_t &remote_addr) {
+            DO_LOG(DEBUG) << "Server: Posting recv";
+            ERRCHK(fi_recv(ep, buf, size, nullptr, 0, nullptr));
+        }
+
+        inline void wait_recv_addr(char *buf, size_t size, addr_t &remote_addr) {
+            ERRCHK(wait_for_completion(rx_cq));
+            uint64_t sizeOfAddress = *(uint64_t *) buf;
+
+            LOG2<TRACE>() << "Server: Adding client to AV";
+
+            if (1 != fi_av_insert(av, buf + sizeof(uint64_t), 1, &remote_addr, 0, NULL)) {
+                std::cerr << "ERROR - fi_av_insert did not return 1" << std::endl;
+                perror("Error");
+                exit(1);
+            }
+            LOG2<TRACE>() << "Server: Added client to AV";
+        }
+
+        /**
          * Recv message
          * @param remote_addr remote address
          * @param buf registered buffer
@@ -169,10 +211,20 @@ namespace cse498 {
          * @param size size of buffer
          */
         inline void send(addr_t remote_addr, char *buf, size_t size) {
-            LOG2<TRACE>() << ("Server: Posting send");
+            LOG2<TRACE>() << "Server: Posting send";
             ERRCHK(fi_send(ep, buf, size, nullptr, remote_addr, nullptr));
             ERRCHK(wait_for_completion(tx_cq));
-            LOG2<TRACE>() << ("Server: Posting sent");
+            LOG2<TRACE>() << "Server: Posting sent";
+        }
+
+        inline bool async_send(addr_t remote_addr, char *buf, size_t size) {
+            LOG2<TRACE>() << "Server: Posting send";
+            return ERRREPORT(fi_send(ep, buf, size, nullptr, remote_addr, nullptr));
+        }
+
+        inline void wait_send() {
+            ERRCHK(wait_for_completion(tx_cq));
+            LOG2<TRACE>() << "Server: Posting sent";
         }
 
         /**
@@ -229,12 +281,14 @@ namespace cse498 {
          * @param address connect to this address
          * @param port connect to this port
          */
-        ConnectionlessClient(const char *address, uint16_t port) {
+        ConnectionlessClient(const char *address, uint16_t port, uint32_t protocol = FI_PROTO_SOCK_TCP) {
             LOG2<TRACE>() << ("Getting fi provider");
             hints = fi_allocinfo();
             hints->caps = FI_MSG;
             hints->ep_attr->type = FI_EP_RDM;
-            ERRCHK(fi_getinfo(FI_VERSION(1, 6), address,
+            hints->ep_attr->protocol = protocol;
+
+            ERRCHK(fi_getinfo(FI_VERSION(MAJOR_VERSION_USED, MINOR_VERSION_USED), address,
                               std::to_string(port).c_str(), 0, hints, &fi));
             LOG2<TRACE>() << "Using provider: " << fi->fabric_attr->prov_name;
             LOG2<TRACE>() << "Creating fabric object";
@@ -296,7 +350,6 @@ namespace cse498 {
 
         }
 
-
         /**
          * Send address
          * @param buf any buffer
@@ -318,6 +371,37 @@ namespace cse498 {
 
             ERRCHK(fi_send(ep, buf, sizeof(uint64_t) + addrlen, nullptr, remote_addr, nullptr));
             ERRCHK(wait_for_completion(tx_cq));
+            delete[] addr;
+        }
+
+        /**
+         * Send address
+         * @param buf any buffer
+         * @param size size of buffeer
+         */
+        inline bool async_send_addr(char *buf, size_t size, void *&state) {
+            size_t addrlen = 0;
+            fi_getname(&ep->fid, nullptr, &addrlen);
+            char *addr = new char[addrlen];
+            ERRCHK(fi_getname(&ep->fid, addr, &addrlen));
+
+            LOG2<TRACE>() << "Client: Sending (" << addrlen << ") " << (void *) addr << " to " << remote_addr;
+
+            memcpy(buf, &addrlen, sizeof(uint64_t));
+            memcpy(buf + sizeof(uint64_t), addr, addrlen);
+            LOG2<TRACE>() << "Client: Sending " << sizeof(uint64_t) + addrlen << "B in " << size << "B buffer";
+
+            assert(size >= (sizeof(uint64_t) + addrlen));
+
+            state = addr;
+
+            return ERRREPORT(fi_send(ep, buf, sizeof(uint64_t) + addrlen, nullptr, remote_addr, nullptr));
+        }
+
+        inline void async_wait_send_addr(char *buf, size_t size, void *&state) {
+            char *addr = (char *) state;
+            ERRCHK(wait_for_completion(tx_cq));
+            delete[] addr;
         }
 
         /**
@@ -338,6 +422,16 @@ namespace cse498 {
         inline void send(char *buf, size_t size) {
             ERRCHK(fi_send(ep, buf, size, nullptr, remote_addr, nullptr));
             ERRCHK(wait_for_completion(tx_cq));
+        }
+
+        inline bool async_send(char *buf, size_t size) {
+            LOG2<TRACE>() << "Client: Posting send";
+            return ERRREPORT(fi_send(ep, buf, size, nullptr, remote_addr, nullptr));
+        }
+
+        inline void wait_send() {
+            ERRCHK(wait_for_completion(tx_cq));
+            LOG2<TRACE>() << "Client: Posting sent";
         }
 
         /**
@@ -395,11 +489,12 @@ namespace cse498 {
          * @param addr address
          * @param port port
          */
-        Connectionless_t(bool useServer, char *addr, int port) : isServer(useServer) {
+        Connectionless_t(bool useServer, char *addr, int port, uint32_t protocol = FI_PROTO_SOCK_TCP) : isServer(
+                useServer) {
             if (isServer) {
-                this->server = new ConnectionlessServer(addr, port);
+                this->server = new ConnectionlessServer(addr, port, protocol);
             } else {
-                this->client = new ConnectionlessClient(addr, port);
+                this->client = new ConnectionlessClient(addr, port, protocol);
             }
         }
 

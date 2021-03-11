@@ -29,6 +29,7 @@ int main(int argc, char **argv) {
         std::cout << (start->caps & FI_MSG ? "FI_MSG" : "NO FI_MSG") << std::endl;
         std::cout << (start->caps & FI_READ ? "FI_READ" : "NO FI_READ") << std::endl;
         std::cout << (start->caps & FI_RMA ? "FI_RMA" : "NO FI_RMA") << std::endl;
+        std::cout << (start->caps & FI_HMEM ? "HAS FI_HMEM" : "NO FI_HMEM") << std::endl;
 
         std::cout << std::endl;
         start = start->next;
