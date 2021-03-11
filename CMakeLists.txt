@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.0)
 
 project(NetworkLayer VERSION 0.3.0)
 
+set(CMAKE_CXX_STANDARD 17)
+
 find_package(GTest CONFIG REQUIRED)
 
 find_package(Doxygen)

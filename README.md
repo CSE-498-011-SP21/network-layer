@@ -6,7 +6,6 @@ Network layer code.
 - gtest
 - libfabric 1.6
 - tbb
-- spdlog
 - doxygen optional to build documentation
 
 Run the following to ensure the network layer is working:
@@ -17,7 +16,7 @@ git submodule update
 
 # Use brew, apt, or yum to install libfabric
 
-./vcpkg/vcpkg install gtest tbb spdlog
+./vcpkg/vcpkg install gtest tbb
 
 mkdir build
 cd build

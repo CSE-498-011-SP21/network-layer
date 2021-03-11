@@ -19,15 +19,13 @@
 #include <atomic>
 #include <unordered_map>
 
-#define SPDLOG_ACTIVE_LEVEL SPDLOG_LEVEL_TRACE
-
-#include <kvcg_logging.h>
+#include <kvcg_log2.hh>
 
 #define ERRCHK(x) error_check((x), __FILE__, __LINE__);
 
 inline void error_check(int err, std::string file, int line) {
     if (err) {
-        LOG2<ERROR>() << "ERROR (" << err << "): " << fi_strerror(-err) << " " << file << ":" << line;
+        DO_LOG(ERROR) << "ERROR (" << err << "): " << fi_strerror(-err) << " " << file << ":" << line;
         _exit(1);
     }
 }
