@@ -33,7 +33,8 @@ inline void error_check(int err, std::string file, int line) {
 #define MAJOR_VERSION_USED 1
 #define MINOR_VERSION_USED 9
 
-static_assert(FI_MAJOR_VERSION == MAJOR_VERSION_USED && FI_MINOR_VERSION == MINOR_VERSION_USED, "Rely on libfabric 1.9");
+static_assert(FI_MAJOR_VERSION == MAJOR_VERSION_USED && FI_MINOR_VERSION == MINOR_VERSION_USED,
+              "Rely on libfabric 1.9");
 
 namespace cse498 {
 
@@ -187,7 +188,9 @@ namespace cse498 {
          */
         inline void registerRPC(uint64_t fnID, std::function<pack_t(pack_t)> fn) {
             LOG2<DEBUG>() << "Registering " << fnID;
-            assert(fnMap->insert({fnID, fn}).second);
+            auto res = fnMap->insert({fnID, fn});
+            assert(res.second);
+            DO_LOG(DEBUG) << ((res.second) ? "inserted" : "didnt work");
         }
 
         /**
@@ -213,6 +216,9 @@ namespace cse498 {
                 auto fnRes = fnMap->find(h.fnID);
 
                 LOG2<DEBUG>() << "Getting fn " << h.fnID;
+
+
+                LOG2<DEBUG>() << ((fnRes != fnMap->end()) ? "exits" : "dne");
 
                 assert(fnRes != fnMap->end());
 
