@@ -27,6 +27,16 @@ inline void error_check_2(int err, std::string file, int line) {
     }
 }
 
+#define ERRREPORT(x) error_report((x), __FILE__, __LINE__);
+
+inline bool error_report(int err, std::string file, int line) {
+    if (err) {
+        LOG2<ERROR>() << "ERROR (" << err << "): " << fi_strerror(-err) << " " << file << ":" << line;
+        return false;
+    }
+    return true;
+}
+
 #define MAJOR_VERSION_USED 1
 #define MINOR_VERSION_USED 9
 
@@ -201,10 +211,20 @@ namespace cse498 {
          * @param size size of buffer
          */
         inline void send(addr_t remote_addr, char *buf, size_t size) {
-            LOG2<TRACE>() << ("Server: Posting send");
+            LOG2<TRACE>() << "Server: Posting send";
             ERRCHK(fi_send(ep, buf, size, nullptr, remote_addr, nullptr));
             ERRCHK(wait_for_completion(tx_cq));
-            LOG2<TRACE>() << ("Server: Posting sent");
+            LOG2<TRACE>() << "Server: Posting sent";
+        }
+
+        inline bool async_send(addr_t remote_addr, char *buf, size_t size) {
+            LOG2<TRACE>() << "Server: Posting send";
+            return ERRREPORT(fi_send(ep, buf, size, nullptr, remote_addr, nullptr));
+        }
+
+        inline void wait_send() {
+            ERRCHK(wait_for_completion(tx_cq));
+            LOG2<TRACE>() << "Server: Posting sent";
         }
 
         /**
@@ -330,7 +350,6 @@ namespace cse498 {
 
         }
 
-
         /**
          * Send address
          * @param buf any buffer
@@ -352,6 +371,37 @@ namespace cse498 {
 
             ERRCHK(fi_send(ep, buf, sizeof(uint64_t) + addrlen, nullptr, remote_addr, nullptr));
             ERRCHK(wait_for_completion(tx_cq));
+            delete[] addr;
+        }
+
+        /**
+         * Send address
+         * @param buf any buffer
+         * @param size size of buffeer
+         */
+        inline bool async_send_addr(char *buf, size_t size, void *&state) {
+            size_t addrlen = 0;
+            fi_getname(&ep->fid, nullptr, &addrlen);
+            char *addr = new char[addrlen];
+            ERRCHK(fi_getname(&ep->fid, addr, &addrlen));
+
+            LOG2<TRACE>() << "Client: Sending (" << addrlen << ") " << (void *) addr << " to " << remote_addr;
+
+            memcpy(buf, &addrlen, sizeof(uint64_t));
+            memcpy(buf + sizeof(uint64_t), addr, addrlen);
+            LOG2<TRACE>() << "Client: Sending " << sizeof(uint64_t) + addrlen << "B in " << size << "B buffer";
+
+            assert(size >= (sizeof(uint64_t) + addrlen));
+
+            state = addr;
+
+            return ERRREPORT(fi_send(ep, buf, sizeof(uint64_t) + addrlen, nullptr, remote_addr, nullptr));
+        }
+
+        inline void async_wait_send_addr(char *buf, size_t size, void *&state) {
+            char *addr = (char *) state;
+            ERRCHK(wait_for_completion(tx_cq));
+            delete[] addr;
         }
 
         /**
@@ -372,6 +422,16 @@ namespace cse498 {
         inline void send(char *buf, size_t size) {
             ERRCHK(fi_send(ep, buf, size, nullptr, remote_addr, nullptr));
             ERRCHK(wait_for_completion(tx_cq));
+        }
+
+        inline bool async_send(char *buf, size_t size) {
+            LOG2<TRACE>() << "Client: Posting send";
+            return ERRREPORT(fi_send(ep, buf, size, nullptr, remote_addr, nullptr));
+        }
+
+        inline void wait_send() {
+            ERRCHK(wait_for_completion(tx_cq));
+            LOG2<TRACE>() << "Client: Posting sent";
         }
 
         /**
