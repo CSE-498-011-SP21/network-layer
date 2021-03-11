@@ -8,7 +8,7 @@
 #include <rdma/fi_cm.h>
 #include <rdma/fi_tagged.h>
 
-#include <spdlog/spdlog.h>
+#include <kvcg_logging.h>
 
 #include <cstring>
 
@@ -20,7 +20,7 @@
 
 inline int callCheck(int err, const char *file, int line, bool abort = true) {
     if (err < 0) {
-        SPDLOG_CRITICAL("ERROR ({0}): {1} {2}:{3}", err, fi_strerror(-err), file, line);
+        LOG2<ERROR>() << "ERROR (" << err << "): " << fi_strerror(-err) << " " << file << ":" << line;
         exit(0);
     }
     return err;
@@ -40,46 +40,46 @@ namespace cse498 {
         Connection() {
             create_hints();
 
-            SPDLOG_DEBUG("Initializing passive connection");
+            LOG2<DEBUG>() << "Initializing passive connection";
             SAFE_CALL(fi_getinfo(FI_VERSION(1, 6), nullptr, DEFAULT_PORT, FI_SOURCE, hints,
                                  &info)); // TODO I don't beleive FI_SOURCE does anything. Should try to delete.
 
-            SPDLOG_TRACE("Creating fabric");
+            LOG2<TRACE>() << "Creating fabric";
             SAFE_CALL(fi_fabric(info->fabric_attr, &fab, nullptr));
 
             open_eq();
 
             fid_pep *pep;
-            SPDLOG_TRACE("Creating passive endpoint");
+            LOG2<TRACE>() << "Creating passive endpoint";
             SAFE_CALL(fi_passive_ep(fab, info, &pep, nullptr));
 
-            SPDLOG_TRACE("Binding eq to pep");
+            LOG2<TRACE>() << "Binding eq to pep";
             SAFE_CALL(fi_pep_bind(pep, &eq->fid, 0));
-            SPDLOG_TRACE("Transitioning pep to listening state");
+            LOG2<TRACE>() << "Transitioning pep to listening state";
             SAFE_CALL(fi_listen(pep));
 
             uint32_t event;
             struct fi_eq_cm_entry entry = {};
-            SPDLOG_TRACE("Waiting for connection request");
+            LOG2<TRACE>() << "Waiting for connection request";
             int rd = SAFE_CALL(fi_eq_sread(eq, &event, &entry, sizeof(entry), -1, 0));
             // May want to check that the address is correct.
             if (rd != sizeof(entry)) {
-                SPDLOG_CRITICAL("There was an error reading the connection request. ");
+                LOG2<ERROR>() << "There was an error reading the connection request.";
                 exit(1);
             }
 
             if (event != FI_CONNREQ) {
-                SPDLOG_CRITICAL("Incorrect event type");
+                LOG2<ERROR>() << "Incorrect event type";
                 exit(1);
             }
             fi_close(&pep->fid);
             fi_freeinfo(info);
             info = entry.info;
-            SPDLOG_TRACE("Connection request received");
+            LOG2<TRACE>() << "Connection request received";
 
             setup_active_ep();
 
-            SPDLOG_TRACE("Accepting connection request");
+            LOG2<TRACE>() << "Accepting connection request";
             SAFE_CALL(fi_accept(ep, nullptr, 0));
 
             wait_for_eq_connected();
@@ -92,7 +92,7 @@ namespace cse498 {
         Connection(const char *addr) {
             create_hints();
 
-            SPDLOG_DEBUG("Initializing client");
+            LOG2<DEBUG>() << "Initializing client";
             SAFE_CALL(fi_getinfo(FI_VERSION(1, 6), addr, DEFAULT_PORT, 0, hints, &info));
 
             SAFE_CALL(fi_fabric(info->fabric_attr, &fab, nullptr));
@@ -101,14 +101,14 @@ namespace cse498 {
 
             setup_active_ep();
 
-            SPDLOG_TRACE("Sending connection request");
+            LOG2<TRACE>() << "Sending connection request";
             SAFE_CALL(fi_connect(ep, info->dest_addr, nullptr, 0));
 
             wait_for_eq_connected();
         }
 
         ~Connection() {
-            SPDLOG_TRACE("Closing all the fabric objects");
+            LOG2<TRACE>() << "Closing all the fabric objects";
             fi_freeinfo(hints);
             fi_freeinfo(info);
             fi_close(&fab->fid);
@@ -145,7 +145,7 @@ namespace cse498 {
          **/
         inline void async_send(const char *data, const size_t size) {
             if (size > MAX_MSG_SIZE) {
-                SPDLOG_CRITICAL("Too large of a message!");
+                LOG2<ERROR>() << "Too large of a message!";
                 exit(1);
             }
             ++msg_sends;
@@ -199,7 +199,7 @@ namespace cse498 {
                     return 0;
                 }
                 if (SAFE_CALL(fi_cntr_readerr(cntr)) > 0) {
-                    SPDLOG_WARN("There was an error on the counter");
+                    LOG2<ERROR>() << "There was an error on the counter";
                     return -1;
                 }
             }
@@ -225,7 +225,7 @@ namespace cse498 {
             fi_eq_attr eq_attr = {};
             eq_attr.size = 1; // Minimum size, maybe not required.
             eq_attr.wait_obj = FI_WAIT_UNSPEC;
-            SPDLOG_TRACE("Opening event queue");
+            LOG2<TRACE>() << "Opening event queue";
             SAFE_CALL(fi_eq_open(fab, &eq_attr, &eq, nullptr));
         }
 
@@ -236,7 +236,7 @@ namespace cse498 {
          * Requires domain, ep to be set
          **/
         inline void setup_cntrs() {
-            SPDLOG_TRACE("Opening rx and tx counters");
+            LOG2<TRACE>() << "Opening rx and tx counters";
             fi_cntr_attr cntr_attr = {};
             cntr_attr.events = FI_CNTR_EVENTS_COMP;
             cntr_attr.wait_obj = FI_WAIT_NONE;
@@ -252,13 +252,13 @@ namespace cse498 {
         inline void wait_for_eq_connected() {
             struct fi_eq_cm_entry entry;
             uint32_t event;
-            SPDLOG_TRACE("Reading eq for FI_CONNECTED event");
+            LOG2<TRACE>() << "Reading eq for FI_CONNECTED event";
             int addr_len = SAFE_CALL(fi_eq_sread(eq, &event, &entry, sizeof(entry), -1, 0));
             if (event != FI_CONNECTED) {
-                SPDLOG_CRITICAL("Not a connected event");
+                LOG2<ERROR>() << "Not a connected event";
                 exit(1);
             }
-            SPDLOG_DEBUG("Connected");
+            LOG2<DEBUG>() << "Connected";
         }
 
         /**
@@ -267,18 +267,18 @@ namespace cse498 {
          * Requires fab, info to be set.
          **/
         inline void setup_active_ep() {
-            SPDLOG_TRACE("Creating domain");
+            LOG2<TRACE>() << "Creating domain";
             SAFE_CALL(fi_domain(fab, info, &domain, nullptr));
 
-            SPDLOG_TRACE("Creating active endpoint");
+            LOG2<TRACE>() << "Creating active endpoint";
             SAFE_CALL(fi_endpoint(domain, info, &ep, nullptr));
 
             setup_cntrs();
 
-            SPDLOG_TRACE("Binding eq to pep");
+            LOG2<TRACE>() << "Binding eq to pep";
             SAFE_CALL(fi_ep_bind(ep, &eq->fid, 0));
 
-            SPDLOG_TRACE("Enabling endpoint");
+            LOG2<TRACE>() << "Enabling endpoint";
             SAFE_CALL(fi_enable(ep));
         }
     };

@@ -10,7 +10,7 @@
 void registerReturnPackAs1(cse498::FabricRPC &f);
 
 TEST(fabricTest, fabricTest_echo) {
-    spdlog::set_level(spdlog::level::debug); // This setting is missed in the wiki
+    //spdlog::set_level(spdlog::level::debug); // This setting is missed in the wiki
 
     std::atomic_bool done;
     done = false;

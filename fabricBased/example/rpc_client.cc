@@ -5,15 +5,17 @@
 #include <networklayer/fabricBased.hh>
 #include <thread>
 
+int LOG_LEVEL = TRACE;
+
 int main(int argc, char **argv) {
-    spdlog::set_level(spdlog::level::trace);
+    //spdlog::set_level(spdlog::level::trace);
 
     std::string addr = "127.0.0.1";
     if (argc > 1) {
         addr = std::string(argv[1]);
     }
 
-    spdlog::debug("Using addr {}", addr);
+    //spdlog::debug("Using addr {}", addr);
 
     cse498::FabricRPClient c(addr, cse498::DEFAULT_PORT);
     std::string s = "hi";

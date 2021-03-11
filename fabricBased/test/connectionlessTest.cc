@@ -11,7 +11,7 @@ void rbc(cse498::ConnectionlessServer &c, const std::vector<cse498::addr_t> &add
          size_t messageSize);
 
 TEST(connectionlessTest, connectionlessTest_send_recv) {
-    spdlog::set_level(spdlog::level::trace); // This setting is missed in the wiki
+    //spdlog::set_level(spdlog::level::trace); // This setting is missed in the wiki
 
     std::atomic_bool done;
 
@@ -49,7 +49,7 @@ TEST(connectionlessTest, connectionlessTest_send_recv) {
 }
 
 TEST(connectionlessTest, connectionlessTest_send_recv_multiple_clients) {
-    spdlog::set_level(spdlog::level::trace); // This setting is missed in the wiki
+    //spdlog::set_level(spdlog::level::trace); // This setting is missed in the wiki
 
     std::atomic_bool done;
 
@@ -104,7 +104,7 @@ TEST(connectionlessTest, connectionlessTest_send_recv_multiple_clients) {
 }
 
 TEST(connectionlessTest, connectionlessTest_broadcast) {
-    spdlog::set_level(spdlog::level::trace); // This setting is missed in the wiki
+    //spdlog::set_level(spdlog::level::trace); // This setting is missed in the wiki
 
     std::atomic_bool done;
 
