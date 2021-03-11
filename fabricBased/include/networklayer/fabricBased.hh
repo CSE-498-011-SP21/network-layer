@@ -36,7 +36,7 @@ namespace cse498 {
     /**
      * Default port for RPCs
      */
-    int DEFAULT_PORT = 8080;
+    const int DEFAULT_PORT = 8080;
 
     /*
      * Protocol:
@@ -70,7 +70,7 @@ namespace cse498 {
      * @param cq The CQ we are waiting on
      * @return error
      */
-    int wait_for_completion(struct fid_cq *cq) {
+    inline int wait_for_completion(struct fid_cq *cq) {
         fi_cq_entry entry;
         int ret;
         while (1) {
@@ -197,14 +197,14 @@ namespace cse498 {
          * @param fnID id number
          * @param fn RPC function
          */
-        void registerRPC(uint64_t fnID, std::function<pack_t(pack_t)> fn) {
+        inline void registerRPC(uint64_t fnID, std::function<pack_t(pack_t)> fn) {
             assert(fnMap->insert({fnID, fn}).second);
         }
 
         /**
          * Start the server.
          */
-        void start() {
+        inline void start() {
             while (!done) {
                 SPDLOG_TRACE("Server: Receiving client address");
 
@@ -361,7 +361,7 @@ namespace cse498 {
          * @param data data to send
          * @return pack_t returned by remote function
          */
-        pack_t callRemote(uint64_t fnID, pack_t data) {
+        inline pack_t callRemote(uint64_t fnID, pack_t data) {
 
             assert(sizeof(size_t) == sizeof(uint64_t));
 
@@ -384,7 +384,8 @@ namespace cse498 {
             }
             memcpy(local_buf + sizeof(uint64_t) + addrlen + sizeof(Header), data.data(), data.size());
 
-            ERRCHK(fi_send(ep, local_buf, data.size() + sizeof(uint64_t) + addrlen + data.size() + sizeof(Header), nullptr, remote_addr, nullptr));
+            ERRCHK(fi_send(ep, local_buf, data.size() + sizeof(uint64_t) + addrlen + data.size() + sizeof(Header),
+                           nullptr, remote_addr, nullptr));
             ERRCHK(wait_for_completion(tx_cq));
 
             ERRCHK(fi_recv(ep, remote_buf, max_msg_size, nullptr, 0, nullptr));

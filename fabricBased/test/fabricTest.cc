@@ -7,6 +7,8 @@
 #include <gtest/gtest.h>
 #include <future>
 
+void registerReturnPackAs1(cse498::FabricRPC &f);
+
 TEST(fabricTest, fabricTest_echo) {
     spdlog::set_level(spdlog::level::debug); // This setting is missed in the wiki
 
@@ -15,11 +17,9 @@ TEST(fabricTest, fabricTest_echo) {
 
     auto f = std::async([&done]() {
         done = true;
-        const char* address = "127.0.0.1";
+        const char *address = "127.0.0.1";
         cse498::FabricRPC f(address);
-        f.registerRPC(1, [](cse498::pack_t p) {
-            return p;
-        });
+        registerReturnPackAs1(f);
         f.start();
     });
 

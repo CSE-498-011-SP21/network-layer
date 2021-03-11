@@ -7,6 +7,9 @@
 #include <gtest/gtest.h>
 #include <future>
 
+void rbc(cse498::ConnectionlessServer &c, const std::vector<cse498::addr_t> &addresses, char *message,
+         size_t messageSize);
+
 TEST(connectionlessTest, connectionlessTest_send_recv) {
     spdlog::set_level(spdlog::level::trace); // This setting is missed in the wiki
 
@@ -118,7 +121,7 @@ TEST(connectionlessTest, connectionlessTest_broadcast) {
         f.recv_addr(buf, 4096, addr);
         buf[0] = 'a';
         buf[1] = '\0';
-        cse498::reliableBroadcast(f, {addr}, buf, 4096);
+        rbc(f, {addr}, buf, 4096);
         ERRCHK(fi_close(&(mr->fid)));
     });
 

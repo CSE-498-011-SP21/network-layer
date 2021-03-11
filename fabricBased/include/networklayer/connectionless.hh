@@ -42,7 +42,7 @@ namespace cse498 {
      * Free an memory region handler
      * @param x memory region handler
      */
-    void free_mr(mr_t x) {
+    inline void free_mr(mr_t x) {
         ERRCHK(fi_close(&x->fid));
     }
 
@@ -136,7 +136,7 @@ namespace cse498 {
          * @param size
          * @param remote_addr does not need to be pre-allocated
          */
-        void recv_addr(char *buf, size_t size, addr_t &remote_addr) {
+        inline void recv_addr(char *buf, size_t size, addr_t &remote_addr) {
             SPDLOG_TRACE("Server: Posting recv");
 
             ERRCHK(fi_recv(ep, buf, size, nullptr, 0, nullptr));
@@ -159,7 +159,7 @@ namespace cse498 {
          * @param buf registered buffer
          * @param size size of buffer
          */
-        void recv(addr_t remote_addr, char *buf, size_t size) {
+        inline void recv(addr_t remote_addr, char *buf, size_t size) {
             ERRCHK(fi_recv(ep, buf, size, nullptr, remote_addr, nullptr));
             ERRCHK(wait_for_completion(rx_cq));
         }
@@ -170,7 +170,7 @@ namespace cse498 {
          * @param buf not necessarily registered buffer
          * @param size size of buffer
          */
-        void send(addr_t remote_addr, char *buf, size_t size) {
+        inline void send(addr_t remote_addr, char *buf, size_t size) {
             SPDLOG_TRACE("Server: Posting send");
             ERRCHK(fi_send(ep, buf, size, nullptr, remote_addr, nullptr));
             ERRCHK(wait_for_completion(tx_cq));
@@ -183,7 +183,7 @@ namespace cse498 {
          * @param size size of buffer
          * @param mr memory region object, not preallocated
          */
-        void registerMR(char *buf, size_t size, mr_t &mr) {
+        inline void registerMR(char *buf, size_t size, mr_t &mr) {
             ERRCHK(fi_mr_reg(domain, buf, size,
                              FI_WRITE | FI_REMOTE_WRITE | FI_READ | FI_REMOTE_READ, 0,
                              0, 0, &mr, NULL));
@@ -191,7 +191,7 @@ namespace cse498 {
 
     private:
 
-        int wait_for_completion(struct fid_cq *cq) {
+        inline int wait_for_completion(struct fid_cq *cq) {
             fi_cq_entry entry;
             int ret;
             while (1) {
@@ -304,7 +304,7 @@ namespace cse498 {
          * @param buf any buffer
          * @param size size of buffeer
          */
-        void send_addr(char *buf, size_t size) {
+        inline void send_addr(char *buf, size_t size) {
             size_t addrlen = 0;
             fi_getname(&ep->fid, nullptr, &addrlen);
             char *addr = new char[addrlen];
@@ -327,7 +327,7 @@ namespace cse498 {
          * @param buf registered buffer
          * @param size size of buffer
          */
-        void recv(char *buf, size_t size) {
+        inline void recv(char *buf, size_t size) {
             ERRCHK(fi_recv(ep, buf, size, nullptr, remote_addr, nullptr));
             ERRCHK(wait_for_completion(rx_cq));
         }
@@ -337,7 +337,7 @@ namespace cse498 {
          * @param buf any buffer
          * @param size size of buffer
          */
-        void send(char *buf, size_t size) {
+        inline void send(char *buf, size_t size) {
             ERRCHK(fi_send(ep, buf, size, nullptr, remote_addr, nullptr));
             ERRCHK(wait_for_completion(tx_cq));
         }
@@ -348,7 +348,7 @@ namespace cse498 {
          * @param size size of buffer
          * @param mr memory region
          */
-        void registerMR(char *buf, size_t size, mr_t &mr) {
+        inline void registerMR(char *buf, size_t size, mr_t &mr) {
             ERRCHK(fi_mr_reg(domain, buf, size,
                              FI_WRITE | FI_REMOTE_WRITE | FI_READ | FI_REMOTE_READ, 0,
                              0, 0, &mr, NULL));
@@ -356,7 +356,7 @@ namespace cse498 {
 
     private:
 
-        int wait_for_completion(struct fid_cq *cq) {
+        inline int wait_for_completion(struct fid_cq *cq) {
             fi_cq_entry entry;
             int ret;
             while (1) {
@@ -428,8 +428,8 @@ namespace cse498 {
      * @param message message to send
      * @param messageSize size of message
      */
-    void bestEffortBroadcast(ConnectionlessServer &c, const std::vector<addr_t> &addresses, char *message,
-                             size_t messageSize) {
+    inline void bestEffortBroadcast(ConnectionlessServer &c, const std::vector<addr_t> &addresses, char *message,
+                                    size_t messageSize) {
         for (auto &a : addresses) {
             c.send(a, message, messageSize);
         }
@@ -441,7 +441,7 @@ namespace cse498 {
      * @param message message to send
      * @param messageSize size of message
      */
-    void bestEffortBroadcast(std::vector<ConnectionlessClient> &clients, char *message, size_t messageSize) {
+    inline void bestEffortBroadcast(std::vector<ConnectionlessClient> &clients, char *message, size_t messageSize) {
         for (auto &c : clients) {
             c.send(message, messageSize);
         }
@@ -453,7 +453,7 @@ namespace cse498 {
      * @param buf buffer
      * @param sizeOfBuf buffer size
      */
-    void bestEffortBroadcastReceiveFrom(ConnectionlessClient &client, char *buf, size_t sizeOfBuf) {
+    inline void bestEffortBroadcastReceiveFrom(ConnectionlessClient &client, char *buf, size_t sizeOfBuf) {
         client.recv(buf, sizeOfBuf);
     }
 
@@ -464,7 +464,7 @@ namespace cse498 {
      * @param buf buffer
      * @param sizeOfBuf buffer size
      */
-    void bestEffortBroadcastReceiveFrom(ConnectionlessServer &c, addr_t address, char *buf, size_t sizeOfBuf) {
+    inline void bestEffortBroadcastReceiveFrom(ConnectionlessServer &c, addr_t address, char *buf, size_t sizeOfBuf) {
         c.recv(address, buf, sizeOfBuf);
     }
 
@@ -475,8 +475,8 @@ namespace cse498 {
      * @param message to send
      * @param messageSize size of message
      */
-    void reliableBroadcast(ConnectionlessServer &c, const std::vector<addr_t> &addresses, char *message,
-                           size_t messageSize) {
+    inline void reliableBroadcast(ConnectionlessServer &c, const std::vector<addr_t> &addresses, char *message,
+                                  size_t messageSize) {
         bestEffortBroadcast(c, addresses, message, messageSize);
     }
 
@@ -487,7 +487,7 @@ namespace cse498 {
      * @param message message to send
      * @param messageSize size of message
      */
-    void reliableBroadcast(std::vector<ConnectionlessClient> &clients, char *message, size_t messageSize) {
+    inline void reliableBroadcast(std::vector<ConnectionlessClient> &clients, char *message, size_t messageSize) {
         bestEffortBroadcast(clients, message, messageSize);
     }
 
@@ -501,10 +501,11 @@ namespace cse498 {
      * @param markAsReceived function to mark a message as received
      * @return true if it has not been received before
      */
-    bool reliableBroadcastReceiveFrom(ConnectionlessClient &receiveFrom, std::vector<ConnectionlessClient> &clients,
-                                      char *buf,
-                                      size_t bufSize, const std::function<bool(char *, size_t)>& checkIfReceivedBefore,
-                                      const std::function<void(char *, size_t)>& markAsReceived) {
+    inline bool
+    reliableBroadcastReceiveFrom(ConnectionlessClient &receiveFrom, std::vector<ConnectionlessClient> &clients,
+                                 char *buf,
+                                 size_t bufSize, const std::function<bool(char *, size_t)> &checkIfReceivedBefore,
+                                 const std::function<void(char *, size_t)> &markAsReceived) {
 
         receiveFrom.recv(buf, bufSize);
 
