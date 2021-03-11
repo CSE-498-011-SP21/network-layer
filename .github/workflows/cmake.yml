@@ -27,7 +27,7 @@ jobs:
       # access regardless of the host operating system
       shell: bash
       working-directory: ${{github.workspace}}/build
-      run: ${{github.workspace}}/vcpkg/bootstrap-vcpkg.sh && ${{github.workspace}}/vcpkg/vcpkg install gtest tbb spdlog && apt install libfabric-dev
+      run: ls ${{github.workspace}}/vcpkg && ${{github.workspace}}/vcpkg/bootstrap-vcpkg.sh && ${{github.workspace}}/vcpkg/vcpkg install gtest tbb spdlog && apt install libfabric-dev
 
     - name: Configure CMake
       # Use a bash shell so we can use the same syntax for environment variable
