@@ -5,11 +5,13 @@
 #include <networklayer/fabricBased.hh>
 #include <thread>
 
-int main(){
-    spdlog::set_level(spdlog::level::trace);
+int LOG_LEVEL = TRACE;
+
+int main() {
+    //spdlog::set_level(spdlog::level::trace);
 
     cse498::FabricRPC f(nullptr);
-    f.registerRPC(1, [](cse498::pack_t p){
+    f.registerRPC(1, [](cse498::pack_t p) {
         return p;
     });
 

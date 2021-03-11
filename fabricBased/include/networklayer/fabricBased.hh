@@ -5,7 +5,9 @@
 #pragma once
 
 #include <networklayer/RPC.hh>
-#include <tbb/concurrent_unordered_map.h>
+#include <unistd.h>
+#include <cstdlib>
+#include <cstring>
 #include <cassert>
 #include <rdma/fabric.h>
 #include <rdma/fi_domain.h>
@@ -15,16 +17,17 @@
 #include <rdma/fi_rma.h>
 #include <rdma/fi_errno.h>
 #include <atomic>
+#include <unordered_map>
 
 #define SPDLOG_ACTIVE_LEVEL SPDLOG_LEVEL_TRACE
 
-#include <spdlog/spdlog.h>
+#include <kvcg_logging.h>
 
 #define ERRCHK(x) error_check((x), __FILE__, __LINE__);
 
 inline void error_check(int err, std::string file, int line) {
     if (err) {
-        SPDLOG_CRITICAL("ERROR ({0}): {1} {2}:{3}", err, fi_strerror(-err), file, line);
+        LOG2<ERROR>() << "ERROR (" << err << "): " << fi_strerror(-err) << " " << file << ":" << line;
         _exit(1);
     }
 }
@@ -80,9 +83,6 @@ namespace cse498 {
                 // New error on queue
                 struct fi_cq_err_entry err_entry;
                 fi_cq_readerr(cq, &err_entry, 0);
-                SPDLOG_WARN("{0} {1}", fi_strerror(err_entry.err),
-                            fi_cq_strerror(cq, err_entry.prov_errno,
-                                           err_entry.err_data, NULL, 0));
                 return ret;
             }
         }
@@ -99,41 +99,33 @@ namespace cse498 {
          * @param fabricAddress Utilize this address
          */
         FabricRPC(const char *fabricAddress) : fnMap(
-                new tbb::concurrent_unordered_map<uint64_t, std::function<pack_t(pack_t)>>()) {
+                new std::unordered_map<uint64_t, std::function<pack_t(pack_t)>>()) {
 
             done = false;
 
-            assert(fnMap->insert({0, [this](pack_t p) {
+            registerRPC(0, [this](pack_t p) {
                 done = true;
                 return p;
-            }}).second);
+            });
 
-            SPDLOG_TRACE("Getting fi provider");
             hints = fi_allocinfo();
             hints->caps = FI_MSG;
             hints->ep_attr->type = FI_EP_RDM;
 
             ERRCHK(fi_getinfo(FI_VERSION(1, 6), fabricAddress,
                               std::to_string(DEFAULT_PORT).c_str(), FI_SOURCE, hints, &fi));
-            SPDLOG_DEBUG("Using provider: {0}", fi->fabric_attr->prov_name);
-            SPDLOG_DEBUG("SRC ADDR: {0}", fi->fabric_attr->name);
-            SPDLOG_TRACE("Creating fabric object");
             ERRCHK(fi_fabric(fi->fabric_attr, &fabric, nullptr));
-            SPDLOG_TRACE("Creating domain");
             ERRCHK(fi_domain(fabric, fi, &domain, NULL));
-            SPDLOG_TRACE("Creating tx completion queue");
             memset(&cq_attr, 0, sizeof(cq_attr));
             cq_attr.wait_obj = FI_WAIT_NONE;
             //cq_attr.format = FI_CQ_FORMAT_CONTEXT;
             cq_attr.size = fi->tx_attr->size;
             ERRCHK(fi_cq_open(domain, &cq_attr, &tx_cq, NULL));
-            SPDLOG_TRACE("Creating rx completion queue");
             cq_attr.size = fi->rx_attr->size;
             ERRCHK(fi_cq_open(domain, &cq_attr, &rx_cq, NULL));
 
             // Create an address vector. This allows connectionless endpoints to communicate
             // without having to resolve addresses, such as IPv4, during data transfers.
-            SPDLOG_TRACE("Creating address vector");
             memset(&av_attr, 0, sizeof(av_attr));
             av_attr.type = fi->domain_attr->av_type ?
                            fi->domain_attr->av_type : FI_AV_MAP;
@@ -141,7 +133,6 @@ namespace cse498 {
             av_attr.name = NULL;
             ERRCHK(fi_av_open(domain, &av_attr, &av, NULL));
 
-            SPDLOG_TRACE("Creating endpoint");
             ERRCHK(fi_endpoint(domain, fi, &ep, NULL));
 
             // Could create multiple endpoints, especially if there are multiple NICs available.
@@ -154,19 +145,15 @@ namespace cse498 {
 
             ERRCHK(fi_ep_bind(ep, &av->fid, 0));
 
-            SPDLOG_TRACE("Binding Rx CQ to EP");
             ERRCHK(fi_ep_bind(ep, &rx_cq->fid, FI_RECV));
 
 
-            SPDLOG_TRACE("Binding Tx CQ to EP");
             ERRCHK(fi_ep_bind(ep, &tx_cq->fid, FI_TRANSMIT));
 
             // Enable EP
-            SPDLOG_TRACE("Enabling EP");
             ERRCHK(fi_enable(ep));
 
             // Register memory region for RDMA
-            SPDLOG_TRACE("Registering memory region");
             ERRCHK(fi_mr_reg(domain, remote_buf, max_msg_size,
                              FI_WRITE | FI_REMOTE_WRITE | FI_READ | FI_REMOTE_READ, 0,
                              0, 0, &mr, NULL));
@@ -189,7 +176,6 @@ namespace cse498 {
 
             delete[] local_buf;
             delete[] remote_buf;
-            SPDLOG_INFO("All freed");
         }
 
         /**
@@ -198,6 +184,7 @@ namespace cse498 {
          * @param fn RPC function
          */
         inline void registerRPC(uint64_t fnID, std::function<pack_t(pack_t)> fn) {
+            LOG2<DEBUG>() << "Registering " << fnID;
             assert(fnMap->insert({fnID, fn}).second);
         }
 
@@ -206,16 +193,13 @@ namespace cse498 {
          */
         inline void start() {
             while (!done) {
-                SPDLOG_TRACE("Server: Receiving client address");
 
                 ERRCHK(fi_recv(ep, remote_buf, max_msg_size, nullptr, 0, nullptr));
                 ERRCHK(wait_for_completion(rx_cq));
-                SPDLOG_TRACE("Completion");
 
                 uint64_t sizeOfAddress = *(uint64_t *) remote_buf;
 
                 fi_addr_t remote_addr;
-                SPDLOG_TRACE("Server: Adding client to AV");
 
                 if (1 != fi_av_insert(av, remote_buf + sizeof(uint64_t), 1, &remote_addr, 0, NULL)) {
                     std::cerr << "ERROR - fi_av_insert did not return 1" << std::endl;
@@ -225,6 +209,10 @@ namespace cse498 {
 
                 Header h = *(Header *) (remote_buf + sizeof(uint64_t) + sizeOfAddress);
                 auto fnRes = fnMap->find(h.fnID);
+
+                LOG2<DEBUG>() << "Getting fn " << h.fnID;
+
+                assert(fnRes != fnMap->end());
 
                 pack_t p(h.sizeOfArg);
 
@@ -246,7 +234,7 @@ namespace cse498 {
     private:
 
 
-        tbb::concurrent_unordered_map<uint64_t, std::function<pack_t(pack_t)>> *fnMap;
+        std::unordered_map<uint64_t, std::function<pack_t(pack_t)>> *fnMap;
 
         fi_info *fi, *hints;
         fid_fabric *fabric;
@@ -274,36 +262,28 @@ namespace cse498 {
          * @param port connect to this port
          */
         FabricRPClient(const std::string &address, uint16_t port) {
-            SPDLOG_TRACE("Getting fi provider");
             hints = fi_allocinfo();
             hints->caps = FI_MSG;
             hints->ep_attr->type = FI_EP_RDM;
             ERRCHK(fi_getinfo(FI_VERSION(1, 6), address.c_str(),
                               std::to_string(DEFAULT_PORT).c_str(), 0, hints, &fi));
-            SPDLOG_DEBUG("Using provider: {}", fi->fabric_attr->prov_name);
-            SPDLOG_TRACE("Creating fabric object");
             ERRCHK(fi_fabric(fi->fabric_attr, &fabric, nullptr));
-            SPDLOG_TRACE("Creating domain");
             ERRCHK(fi_domain(fabric, fi, &domain, NULL));
-            SPDLOG_TRACE("Creating tx completion queue");
             memset(&cq_attr, 0, sizeof(cq_attr));
             cq_attr.wait_obj = FI_WAIT_NONE;
             //cq_attr.format = FI_CQ_FORMAT_CONTEXT;
             cq_attr.size = fi->tx_attr->size;
             ERRCHK(fi_cq_open(domain, &cq_attr, &tx_cq, NULL));
-            SPDLOG_TRACE("Creating rx completion queue");
             cq_attr.size = fi->rx_attr->size;
             ERRCHK(fi_cq_open(domain, &cq_attr, &rx_cq, NULL));
 
             // Create an address vector. This allows connectionless endpoints to communicate
             // without having to resolve addresses, such as IPv4, during data transfers.
-            SPDLOG_TRACE("Creating address vector");
 
             memset(&av_attr, 0, sizeof(av_attr));
             av_attr.type = fi->domain_attr->av_type;
             av_attr.count = 1;
             ERRCHK(fi_av_open(domain, &av_attr, &av, NULL));
-            SPDLOG_TRACE("Creating endpoint");
             ERRCHK(fi_endpoint(domain, fi, &ep, NULL));
 
             // Could create multiple endpoints, especially if there are multiple NICs available.
@@ -315,17 +295,13 @@ namespace cse498 {
             memset(remote_buf, 0, max_msg_size);
 
             ERRCHK(fi_ep_bind(ep, &av->fid, 0));
-            SPDLOG_TRACE("Binding TX CQ to EP");
             ERRCHK(fi_ep_bind(ep, &tx_cq->fid, FI_TRANSMIT));
-            SPDLOG_TRACE("Binding RX CQ to EP");
             ERRCHK(fi_ep_bind(ep, &rx_cq->fid, FI_RECV));
 
             // Enable EP
-            SPDLOG_TRACE("Enabling EP");
             ERRCHK(fi_enable(ep));
 
             // Register memory region for RDMA
-            SPDLOG_TRACE("Registering memory region");
             ERRCHK(fi_mr_reg(domain, remote_buf, max_msg_size,
                              FI_WRITE | FI_REMOTE_WRITE | FI_READ | FI_REMOTE_READ, 0,
                              0, 0, &mr, NULL));
@@ -369,8 +345,6 @@ namespace cse498 {
             fi_getname(&ep->fid, nullptr, &addrlen);
             char *addr = new char[addrlen];
             ERRCHK(fi_getname(&ep->fid, addr, &addrlen));
-
-            SPDLOG_DEBUG("Client: Sending ({0}) {1} to {2}", addrlen, (void *) addr, remote_addr);
 
             memcpy(local_buf, &addrlen, sizeof(uint64_t));
             memcpy(local_buf + sizeof(uint64_t), addr, addrlen);

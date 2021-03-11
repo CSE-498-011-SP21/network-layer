@@ -5,20 +5,21 @@
 #include <networklayer/connectionless.hh>
 #include <iostream>
 
+int LOG_LEVEL = TRACE;
+
 int main(int argc, char **argv) {
-    spdlog::set_level(spdlog::level::trace);
 
     std::string addr = "127.0.0.1";
     if (argc > 1) {
         addr = std::string(argv[1]);
     }
 
-    spdlog::debug("Using addr {}", addr);
+    //spdlog::debug("Using addr {}", addr);
 
     cse498::ConnectionlessClient c(addr.c_str(), 8080);
-    const char* s = "hi";
+    const char *s = "hi";
 
-    char* buf = new char[4096];
+    char *buf = new char[4096];
     cse498::mr_t mr;
 
     c.registerMR(buf, 4096, mr);
@@ -26,7 +27,7 @@ int main(int argc, char **argv) {
     // we can use registered memory for send
     c.send_addr(buf, 4096);
 
-    char* local = new char[3];
+    char *local = new char[3];
     memcpy(local, s, 3);
 
     // we can use unregistered memory for send
