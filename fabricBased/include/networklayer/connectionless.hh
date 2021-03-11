@@ -13,7 +13,7 @@
 #include <rdma/fi_errno.h>
 #include <atomic>
 
-#include <kvcg_logging.h>
+#include <kvcg_log2.hh>
 
 #ifndef NETWORKLAYER_CONNECTIONLESS_HH
 #define NETWORKLAYER_CONNECTIONLESS_HH

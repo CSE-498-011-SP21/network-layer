@@ -8,7 +8,7 @@
 #include <rdma/fi_cm.h>
 #include <rdma/fi_tagged.h>
 
-#include <kvcg_logging.h>
+#include <kvcg_log2.hh>
 
 #include <cstring>
 
@@ -20,7 +20,7 @@
 
 inline int callCheck(int err, const char *file, int line, bool abort = true) {
     if (err < 0) {
-        LOG2<ERROR>() << "ERROR (" << err << "): " << fi_strerror(-err) << " " << file << ":" << line;
+        DO_LOG(ERROR) << "ERROR (" << err << "): " << fi_strerror(-err) << " " << file << ":" << line;
         exit(0);
     }
     return err;
