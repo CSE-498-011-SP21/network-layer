@@ -6,7 +6,7 @@ target_link_libraries(fabricBased INTERFACE rpc fabric pthread TBB::tbb)
 target_include_directories(fabricBased INTERFACE "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>" "$<INSTALL_INTERFACE:include>")
 target_link_libraries(fabricBased INTERFACE kvcg_stuff)
 
-install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include DESTINATION include)
+install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/ DESTINATION include)
 
 add_executable(rpc_client example/rpc_client.cc)
 target_link_libraries(rpc_client fabricBased)
