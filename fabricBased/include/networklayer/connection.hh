@@ -123,8 +123,8 @@ namespace cse498 {
             fi_close(&domain->fid);
             fi_close(&eq->fid);
             fi_close(&ep->fid);
-            fi_close(&rx_cntr->fid);
-            fi_close(&tx_cntr->fid);
+            fi_close(&rx_cq->fid);
+            fi_close(&tx_cq->fid);
         }
 
         /**
@@ -165,7 +165,9 @@ namespace cse498 {
          * you can modify the data buffer from async_send.
          **/
         inline void wait_for_sends() {
-            SAFE_CALL(wait_for_counter(tx_cntr, msg_sends));
+            while (msg_sends > 0) {
+                msg_sends -= SAFE_CALL(wait_for_completion(tx_cq));
+            }
         }
 
         /**
@@ -175,9 +177,8 @@ namespace cse498 {
          * @param max_len The maximum length of the message (should be <= MAX_MSG_SIZE)
          **/
         inline void wait_recv(char *buf, size_t max_len) {
-            uint64_t init = fi_cntr_read(rx_cntr);
             SAFE_CALL(fi_recv(ep, buf, max_len, nullptr, 0, nullptr));
-            SAFE_CALL(wait_for_counter(rx_cntr, init + 1));
+            SAFE_CALL(wait_for_completion(rx_cq));
         }
 
     private:
@@ -191,24 +192,23 @@ namespace cse498 {
         fid_domain *domain;
         fid_eq *eq;
         fid_ep *ep;
-        fid_cntr *tx_cntr, *rx_cntr;
+        fid_cq *rx_cq, *tx_cq;
 
-        /**
-         * Waits for the threshold to be reached on a counter.
-         * @param cntr The counter to wait on.
-         * @param threshold The value to wait to reach (>= threshold)
-         * @return -1 on error, 0 otherwise (counters aren't great with reporting specific errors unfortunately)
-         */
-        inline int wait_for_counter(fid_cntr *cntr, uint64_t threshold) {
-            uint64_t cntr_val;
+        // Based on connectionless.hh, but not identical. This returns the value from fi_cq_read. 
+        inline int wait_for_completion(struct fid_cq *cq) {
+            fi_cq_entry entry;
+            int ret;
             while (1) {
-                cntr_val = SAFE_CALL(fi_cntr_read(cntr));
-                if (cntr_val >= threshold) {
-                    return 0;
-                }
-                if (SAFE_CALL(fi_cntr_readerr(cntr)) > 0) {
-                    LOG2<ERROR>() << "There was an error on the counter";
-                    return -1;
+                ret = fi_cq_read(cq, &entry, 1);
+                if (ret > 0) return ret;
+                if (ret != -FI_EAGAIN) {
+                    // New error on queue
+                    struct fi_cq_err_entry err_entry;
+                    fi_cq_readerr(cq, &err_entry, 0);
+                    LOG2<TRACE>() << ("{0} {1}", fi_strerror(err_entry.err),
+                            fi_cq_strerror(cq, err_entry.prov_errno,
+                                           err_entry.err_data, NULL, 0));
+                    return ret;
                 }
             }
         }
@@ -238,20 +238,23 @@ namespace cse498 {
         }
 
         /**
-         * Sets up and binds the two counters (one for receiving messages, and another
-         * for sending)
-         *
-         * Requires domain, ep to be set
+         * Sets up and binds the rx and cq completion queues. 
+         * 
+         * Requires domain, info, ep to be set. 
          **/
-        inline void setup_cntrs() {
-            LOG2<TRACE>() << "Opening rx and tx counters";
-            fi_cntr_attr cntr_attr = {};
-            cntr_attr.events = FI_CNTR_EVENTS_COMP;
-            cntr_attr.wait_obj = FI_WAIT_NONE;
-            SAFE_CALL(fi_cntr_open(domain, &cntr_attr, &rx_cntr, nullptr));
-            SAFE_CALL(fi_cntr_open(domain, &cntr_attr, &tx_cntr, nullptr));
-            SAFE_CALL(fi_ep_bind(ep, &rx_cntr->fid, FI_RECV));
-            SAFE_CALL(fi_ep_bind(ep, &tx_cntr->fid, FI_SEND));
+        inline void setup_cqs() {
+            fi_cq_attr cq_attr = {};
+            cq_attr.wait_obj = FI_WAIT_NONE;
+            cq_attr.size = info->tx_attr->size;
+            LOG2<TRACE>() << "Creating tx completion queue";
+            SAFE_CALL(fi_cq_open(domain, &cq_attr, &tx_cq, NULL));
+            cq_attr.size = info->rx_attr->size;
+            LOG2<TRACE>() << "Creating rx completion queue";
+            SAFE_CALL(fi_cq_open(domain, &cq_attr, &rx_cq, NULL));
+            LOG2<TRACE>() << "Binding TX CQ to EP";
+            SAFE_CALL(fi_ep_bind(ep, &tx_cq->fid, FI_TRANSMIT));
+            LOG2<TRACE>() << "Binding RX CQ to EP";
+            SAFE_CALL(fi_ep_bind(ep, &rx_cq->fid, FI_RECV));
         }
 
         /**
@@ -281,7 +284,7 @@ namespace cse498 {
             LOG2<TRACE>() << "Creating active endpoint";
             SAFE_CALL(fi_endpoint(domain, info, &ep, nullptr));
 
-            setup_cntrs();
+            setup_cqs();
 
             LOG2<TRACE>() << "Binding eq to pep";
             SAFE_CALL(fi_ep_bind(ep, &eq->fid, 0));
