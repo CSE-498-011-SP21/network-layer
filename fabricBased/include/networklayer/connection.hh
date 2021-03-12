@@ -10,6 +10,7 @@
 
 #include <kvcg_log2.hh>
 
+#include <functional>
 #include <cstring>
 
 /**
@@ -44,8 +45,12 @@ namespace cse498 {
     public:
         /**
          * Creates the passive side of a connection (it listens to a connection request from another machine using the other contructor)
+         * 
+         * This constructor is only intended for tests.
+         * 
+         * @param on_listening Right after fi_listen has been called and another connection can request a connection. 
          **/
-        Connection() {
+        Connection(std::function<void()> on_listening) {
             create_hints();
 
             LOG2<DEBUG>() << "Initializing passive connection";
@@ -65,6 +70,8 @@ namespace cse498 {
             SAFE_CALL(fi_pep_bind(pep, &eq->fid, 0));
             LOG2<TRACE>() << "Transitioning pep to listening state";
             SAFE_CALL(fi_listen(pep));
+
+            on_listening();
 
             uint32_t event;
             struct fi_eq_cm_entry entry = {};
@@ -92,6 +99,11 @@ namespace cse498 {
 
             wait_for_eq_connected();
         }
+
+        /**
+         * Creates the passive side of a connection (it listens to a connection request from another machine using the other contructor)
+         **/
+        Connection() : Connection([](){}) {} // Its funny how many different braces this uses
 
         /**
          * Creates the active side of a connection.
