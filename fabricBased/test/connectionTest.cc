@@ -5,6 +5,9 @@
 #include <chrono>
 #include <thread>
 
+void rbc(cse498::Connection &c, const std::vector<cse498::addr_t> &addresses, char *message,
+         size_t messageSize);
+
 TEST(connectionTest, connection_async_send_recv) {
     std::atomic_bool listening = false;
     const std::string msg = "potato\0";
@@ -89,4 +92,40 @@ TEST(connectionTest, connection_send_recv_multiple_connections) {
     char *buf = new char[128];
     c2->wait_recv(buf, 128);
     ASSERT_STREQ(c0_to_c2_msg.c_str(), buf);
+}
+
+TEST(connectionTest, connectionTest_broadcast) {
+    // This is from wait send and recv
+    std::atomic_bool listening = false;
+    const std::string msg = "potato\0";
+    const std::string msg_res = "potato\0";
+    std::string addr = "127.0.0.1";
+
+    auto f = std::async([&msg, &msg_res, &listening]() {
+        // c1 stuff
+        //cse498::Connection c1 = new cse498::Connection([&listening]() {listening = true;});
+        cse498::Connection c1([&listening]() {listening = true;});
+        //c1->wait_send(msg.c_str(), msg.length() + 1);
+        listening = true;
+        //fi_addr_t addr;
+        std::string s = "127.0.0.1";
+        //fi_addr_t addr = s.c_str();
+        cse498::addr_t addr = s;
+        char *buf = new char[4096];
+        rbc(c1, {addr}, buf, 4096);
+
+    });
+
+    while (!listening);
+    // c2 stuff
+    //cse498::Connection c2 = new cse498::Connection("127.0.0.1");
+    cse498::Connection c2("127.0.0.1");
+
+    char *buf = new char[4096];
+    std::vector<cse498::Connection> v;
+    cse498::reliableBroadcastReceiveFrom(c2, v, buf, 4096, [](char *c, size_t s) { return true; },
+                                         [](char *c, size_t s) {});
+
+
+
 }
