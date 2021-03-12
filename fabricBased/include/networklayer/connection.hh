@@ -21,7 +21,7 @@
 inline int callCheck(int err, const char *file, int line, bool abort = true) {
     if (err < 0) {
         DO_LOG(ERROR) << "ERROR (" << err << "): " << fi_strerror(-err) << " " << file << ":" << line;
-        exit(0);
+        exit(1);
     }
     return err;
 }
