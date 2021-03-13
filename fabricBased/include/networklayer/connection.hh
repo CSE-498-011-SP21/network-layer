@@ -315,7 +315,7 @@ namespace cse498 {
      * @param message message to send
      * @param messageSize size of message
      */
-    inline void bestEffortBroadcast(std::vector<Connection> &connections, char *message, size_t messageSize) {
+    inline void bestEffortBroadcast(std::vector<Connection> &connections, const char *message, size_t messageSize) {
         for (auto &c : connections) {
             c.wait_send(message, messageSize);
         }
@@ -337,7 +337,7 @@ namespace cse498 {
      * @param message message to send
      * @param messageSize size of message
      */
-    inline void reliableBroadcast( const std::vector<Connection> &connections, char *message, size_t messageSize) {
+    inline void reliableBroadcast(std::vector<Connection> &connections, const char *message, size_t messageSize) {
         bestEffortBroadcast(connections, message, messageSize);
     }
 

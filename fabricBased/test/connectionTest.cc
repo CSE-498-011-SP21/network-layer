@@ -5,7 +5,7 @@
 #include <chrono>
 #include <thread>
 
-void rbc(const std::vector<cse498::Connection> &connections, char *message, size_t messageSize);
+//void rbc(const std::vector<cse498::Connection> &connections, char *message, size_t messageSize);
 
 TEST(connectionTest, connection_async_send_recv) {
     std::atomic_bool listening = false;
@@ -104,13 +104,17 @@ TEST(connectionTest, connectionTest_broadcast) {
         //cse498::Connection c1 = new cse498::Connection([&listening]() {listening = true;});
         cse498::Connection c1([&listening]() {listening = true;});
         //c1->wait_send(msg.c_str(), msg.length() + 1);
+        //std::vector<cse498::Connection> v;
+        //v.push_back(c1)
         //listening = true;
         //fi_addr_t addr;
         //std::string s = "127.0.0.1";
         //fi_addr_t addr = s.c_str();
         //cse498::addr_t addr = s;
         char *buf = new char[4096];
-        rbc({c1}, buf, 4096);
+        //rbc({c1}, buf, 4096);
+        // Vector needs to be const https://www.reddit.com/r/cpp_questions/comments/do0jw3/cannot_bind_nonconst_lvalue_references_of_type/
+        cse498::reliableBroadcast({c1}, msg.c_str(), 4096);
 
     });
 
