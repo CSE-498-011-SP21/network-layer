@@ -156,18 +156,6 @@ namespace cse498 {
         }
 
         /**
-         * Same as above but with destination address specified
-         *
-         * @param remote_addr The address to send data to
-         * @param data The data to send
-         * @param size The size of the data
-         **/
-        inline void wait_send(addr_t remote_addr, const char *data, const size_t size) {
-            async_send(remote_addr, data, size);
-            wait_for_sends();
-        }
-
-        /**
          * This adds a message to the queue to be sent. It does not block. You cannot
          * touch the data buffer until after wait_for_sends or wait_send is called,
          * otherwise it may send the modified data buffer which is very bad (you should
@@ -184,22 +172,6 @@ namespace cse498 {
             }
             ++msg_sends;
             SAFE_CALL(fi_send(ep, data, size, nullptr, 0, nullptr));
-        }
-
-        /**
-         * Same as above but with destination address specified
-         *
-         * @param remote_addr The address to send data to
-         * @param data The data to send
-         * @param size The size of the data
-         **/
-        inline void async_send(addr_t remote_addr, const char *data, const size_t size) {
-            if (size > MAX_MSG_SIZE) {
-                LOG2<ERROR>() << "Too large of a message!";
-                exit(1);
-            }
-            ++msg_sends;
-            SAFE_CALL(fi_send(ep, data, size, nullptr, remote_addr, nullptr));
         }
 
         /**
@@ -223,17 +195,6 @@ namespace cse498 {
             SAFE_CALL(wait_for_completion(rx_cq));
         }
 
-        /**
-         * Same as above but with destination address specified
-         *
-         * @param remote_addr The address to send data to
-         * @param buf The buffer to store the message data in
-         * @param max_len The maximum length of the message (should be <= MAX_MSG_SIZE)
-         **/
-        inline void wait_recv(addr_t remote_addr, char *buf, size_t max_len) {
-            SAFE_CALL(fi_recv(ep, buf, max_len, nullptr, remote_addr, nullptr));
-            SAFE_CALL(wait_for_completion(rx_cq));
-        }
 
     private:
         const char *DEFAULT_PORT = "8080";
@@ -350,26 +311,12 @@ namespace cse498 {
 
     /**
      * Performs best effort broadcast
-     * @param c server
-     * @param addresses addresses to send to
-     * @param message message to send
-     * @param messageSize size of message
-     */
-    inline void bestEffortBroadcast(Connection &c, const std::vector<addr_t> &addresses, char *message,
-                                    size_t messageSize) {
-        for (auto &a : addresses) {
-            c.wait_send(a, message, messageSize);
-        }
-    }
-
-    /**
-     * Performs best effort broadcast
      * @param clients clients to send to
      * @param message message to send
      * @param messageSize size of message
      */
-    inline void bestEffortBroadcast(std::vector<Connection> &clients, char *message, size_t messageSize) {
-        for (auto &c : clients) {
+    inline void bestEffortBroadcast(std::vector<Connection> &connections, char *message, size_t messageSize) {
+        for (auto &c : connections) {
             c.wait_send(message, messageSize);
         }
     }
@@ -380,33 +327,9 @@ namespace cse498 {
      * @param buf buffer
      * @param sizeOfBuf buffer size
      */
-    inline void bestEffortBroadcastReceiveFrom(Connection &client, char *buf, size_t sizeOfBuf) {
-        client.wait_recv(buf, sizeOfBuf);
+    inline void bestEffortBroadcastReceiveFrom(Connection &connections, char *buf, size_t sizeOfBuf) {
+        connections.wait_recv(buf, sizeOfBuf);
     }
-
-    /**
-     * Performs best effort broadcast recieve from client
-     * @param c connection to recv from
-     * @param address address to recv from
-     * @param buf buffer
-     * @param sizeOfBuf buffer size
-     */
-    inline void bestEffortBroadcastReceiveFrom(Connection &c, addr_t address, char *buf, size_t sizeOfBuf) {
-        c.wait_recv(address, buf, sizeOfBuf);
-    }
-
-    /**
-     * Reliably broadcast from a server
-     * @param c server
-     * @param addresses to send to
-     * @param message to send
-     * @param messageSize size of message
-     */
-    inline void reliableBroadcast(Connection &c, const std::vector<addr_t> &addresses, char *message,
-                                  size_t messageSize) {
-       bestEffortBroadcast(c, addresses, message, messageSize);
-    }
-
 
     /**
      * Reliably broadcast from a server
@@ -414,8 +337,8 @@ namespace cse498 {
      * @param message message to send
      * @param messageSize size of message
      */
-    inline void reliableBroadcast(std::vector<Connection> &clients, char *message, size_t messageSize) {
-        bestEffortBroadcast(clients, message, messageSize);
+    inline void reliableBroadcast( const std::vector<Connection> &connections, char *message, size_t messageSize) {
+        bestEffortBroadcast(connections, message, messageSize);
     }
 
     /**
@@ -429,14 +352,14 @@ namespace cse498 {
      * @return true if it has not been received before
      */
     inline bool
-    reliableBroadcastReceiveFrom(Connection &receiveFrom, std::vector<Connection> &clients,
+    reliableBroadcastReceiveFrom(Connection &receiveFrom, std::vector<Connection> &connections,
                                  char *buf,
                                  size_t bufSize, const std::function<bool(char *, size_t)> &checkIfReceivedBefore,
                                  const std::function<void(char *, size_t)> &markAsReceived) {
         receiveFrom.wait_recv(buf, bufSize);
 
         if (!checkIfReceivedBefore(buf, bufSize)) {
-            bestEffortBroadcast(clients, buf, bufSize);
+            bestEffortBroadcast(connections, buf, bufSize);
             markAsReceived(buf, bufSize);
             return true;
         }
