@@ -5,7 +5,7 @@
 #include <chrono>
 #include <thread>
 
-//void rbc(const std::vector<cse498::Connection> &connections, char *message, size_t messageSize);
+void rbc(std::vector<cse498::Connection> &connections, const char *message, size_t messageSize);
 
 TEST(connectionTest, connection_async_send_recv) {
     std::atomic_bool listening = false;
@@ -93,41 +93,29 @@ TEST(connectionTest, connection_send_recv_multiple_connections) {
     ASSERT_STREQ(c0_to_c2_msg.c_str(), buf);
 }
 
-TEST(connectionTest, connectionTest_broadcast) {
-    // This is from wait send and recv
+TEST(connectionTest, connection_broadcast) {
     std::atomic_bool listening = false;
-    const std::string msg = "potato\0";
-    const std::string msg_res = "potato\0";
+    const std::string msg = "wowww (owen wilson voice\0";
 
-    auto f = std::async([&msg, &msg_res, &listening]() {
-        // c1 stuff
-        //cse498::Connection c1 = new cse498::Connection([&listening]() {listening = true;});
-        cse498::Connection c1([&listening]() {listening = true;});
-        //c1->wait_send(msg.c_str(), msg.length() + 1);
-        //std::vector<cse498::Connection> v;
-        //v.push_back(c1)
-        //listening = true;
-        //fi_addr_t addr;
-        //std::string s = "127.0.0.1";
-        //fi_addr_t addr = s.c_str();
-        //cse498::addr_t addr = s;
-        char *buf = new char[4096];
-        //rbc({c1}, buf, 4096);
-        // Vector needs to be const https://www.reddit.com/r/cpp_questions/comments/do0jw3/cannot_bind_nonconst_lvalue_references_of_type/
-        cse498::reliableBroadcast({c1}, msg.c_str(), 4096);
+    auto f = std::async([&msg, &listening]() {
+        cse498::Connection *c1 = new cse498::Connection([&listening]() {listening = true;});
 
+        std::vector<cse498::Connection> v;
+        v.push_back(*c1);
+
+        rbc(v, msg.c_str(), 4096);
     });
 
     while (!listening);
-    // c2 stuff
-    //cse498::Connection c2 = new cse498::Connection("127.0.0.1");
-    cse498::Connection c2("127.0.0.1");
 
-    char *buf = new char[4096];
+    cse498::Connection *c2 = new cse498::Connection("127.0.0.1");
+
+    char *buf2 = new char[4096];
     std::vector<cse498::Connection> v;
-    cse498::reliableBroadcastReceiveFrom(c2, v, buf, 4096, [](char *c, size_t s) { return true; },
+    // Should be false since hasnt recieved before
+    bool res = cse498::reliableBroadcastReceiveFrom(*c2, v, buf2, 4096, [](char *c, size_t s) { return true; },
                                          [](char *c, size_t s) {});
-
-
+    ASSERT_FALSE(res);
+    ASSERT_STREQ(msg.c_str(), buf2);
 
 }

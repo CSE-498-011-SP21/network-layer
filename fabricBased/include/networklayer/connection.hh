@@ -356,6 +356,7 @@ namespace cse498 {
                                  char *buf,
                                  size_t bufSize, const std::function<bool(char *, size_t)> &checkIfReceivedBefore,
                                  const std::function<void(char *, size_t)> &markAsReceived) {
+
         receiveFrom.wait_recv(buf, bufSize);
 
         if (!checkIfReceivedBefore(buf, bufSize)) {
