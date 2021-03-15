@@ -1,5 +1,4 @@
 find_package(TBB CONFIG REQUIRED)
-find_package(spdlog CONFIG REQUIRED)
 
 add_library(fabricBased INTERFACE)
 target_link_libraries(fabricBased INTERFACE rpc fabric pthread TBB::tbb)
