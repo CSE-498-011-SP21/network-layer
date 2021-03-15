@@ -7,7 +7,7 @@ include(FetchContent)
 FetchContent_Declare(
         common
         GIT_REPOSITORY git@github.com:CSE-498-011-SP21/common.git
-        GIT_TAG 93178d864bb74ee121844a92f6cb8c9f8827fca9
+        GIT_TAG main
 )
 
 FetchContent_MakeAvailable(common)
