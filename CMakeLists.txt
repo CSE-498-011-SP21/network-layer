@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.0)
 
-project(NetworkLayer VERSION 1.0.0)
+project(NetworkLayer VERSION 1.0.1)
 
 set(CMAKE_CXX_STANDARD 17)
 
@@ -30,6 +30,18 @@ install(EXPORT NetworklayerTargets
         FILE NetworklayerTargets.cmake
         NAMESPACE Networklayer::
         DESTINATION lib/cmake/Networklayer
+        )
+
+include(CMakePackageConfigHelpers)
+configure_package_config_file(${CMAKE_CURRENT_SOURCE_DIR}/cmake/Config.cmake.in
+        "${CMAKE_CURRENT_BINARY_DIR}/NetworkLayerConfig.cmake"
+        INSTALL_DESTINATION lib/cmake/NetworkLayer
+        )
+
+install(FILES
+        "${CMAKE_CURRENT_BINARY_DIR}/NetworkLayerConfig.cmake"
+        "${CMAKE_CURRENT_BINARY_DIR}/NetworkLayerConfigVersion.cmake"
+        DESTINATION lib/cmake/NetworkLayer
         )
 
 set(CPACK_PACKAGE_VENDOR "dePaul, Jimmy, and Michael")
