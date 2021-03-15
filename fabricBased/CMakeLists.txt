@@ -3,7 +3,7 @@ find_package(TBB CONFIG REQUIRED)
 add_library(fabricBased INTERFACE)
 target_link_libraries(fabricBased INTERFACE rpc fabric pthread TBB::tbb)
 target_include_directories(fabricBased INTERFACE "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>" "$<INSTALL_INTERFACE:include>")
-target_link_libraries(fabricBased INTERFACE kvcg_stuff)
+target_link_libraries(fabricBased INTERFACE Common::kvcg_stuff)
 
 install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/ DESTINATION include)
 

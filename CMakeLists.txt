@@ -1,6 +1,18 @@
-cmake_minimum_required(VERSION 3.0)
+cmake_minimum_required(VERSION 3.14)
 
 project(NetworkLayer VERSION 1.0.1)
+
+include(FetchContent)
+
+FetchContent_Declare(
+        common
+        GIT_REPOSITORY git@github.com:CSE-498-011-SP21/common.git
+        GIT_TAG 93178d864bb74ee121844a92f6cb8c9f8827fca9
+)
+
+FetchContent_MakeAvailable(common)
+
+add_library(Common::kvcg_stuff ALIAS kvcg_stuff)
 
 set(CMAKE_CXX_STANDARD 17)
 
@@ -11,8 +23,6 @@ find_package(Doxygen)
 enable_testing()
 
 add_subdirectory(commonAPI)
-
-add_subdirectory(common)
 
 add_subdirectory(fabricBased)
 
