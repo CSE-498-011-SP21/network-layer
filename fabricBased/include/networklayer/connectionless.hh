@@ -11,6 +11,8 @@
 #include <rdma/fi_rma.h>
 #include <rdma/fi_errno.h>
 #include <atomic>
+#include <vector>
+#include <functional>
 
 #include <kvcg_log2.hh>
 
