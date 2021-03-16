@@ -50,7 +50,7 @@ configure_package_config_file(${CMAKE_CURRENT_SOURCE_DIR}/cmake/Config.cmake.in
 
 install(FILES
         "${CMAKE_CURRENT_BINARY_DIR}/NetworkLayerConfig.cmake"
-        "${CMAKE_CURRENT_BINARY_DIR}/NetworkLayerConfigVersion.cmake"
+#        "${CMAKE_CURRENT_BINARY_DIR}/NetworkLayerConfigVersion.cmake"
         DESTINATION lib/cmake/NetworkLayer
         )
 
