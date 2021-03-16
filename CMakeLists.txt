@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.14)
 
-project(NetworkLayer VERSION 1.0.1)
+project(NetworkLayer VERSION 1.1.0)
 
 include(FetchContent)
 
