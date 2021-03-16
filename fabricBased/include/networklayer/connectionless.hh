@@ -30,7 +30,7 @@ inline void error_check_2(int err, std::string file, int line) {
 
 inline bool error_report(int err, std::string file, int line) {
     if (err) {
-        LOG2<ERROR>() << "ERROR (" << err << "): " << fi_strerror(-err) << " " << file << ":" << line;
+        LOG2<TRACE>() << "ERROR (" << err << "): " << fi_strerror(-err) << " " << file << ":" << line;
         return false;
     }
     return true;
@@ -79,7 +79,7 @@ namespace cse498 {
 
             LOG2<TRACE>() << "Getting fi provider";
             hints = fi_allocinfo();
-            hints->caps = FI_MSG;
+            hints->caps = FI_MSG | FI_TAGGED | FI_DIRECTED_RECV;
             hints->ep_attr->type = FI_EP_RDM;
             hints->ep_attr->protocol = protocol;
 
@@ -94,7 +94,7 @@ namespace cse498 {
             LOG2<TRACE>() << "Creating tx completion queue";
             memset(&cq_attr, 0, sizeof(cq_attr));
             cq_attr.wait_obj = FI_WAIT_NONE;
-            //cq_attr.format = FI_CQ_FORMAT_CONTEXT;
+            cq_attr.format = FI_CQ_FORMAT_TAGGED;
             cq_attr.size = fi->tx_attr->size;
             ERRCHK(fi_cq_open(domain, &cq_attr, &tx_cq, NULL));
             LOG2<TRACE>() << "Creating rx completion queue";
@@ -152,16 +152,22 @@ namespace cse498 {
          * Recv an address, must be coupled with a send addr
          * @param buf registered buffer
          * @param size
-         * @param remote_addr does not need to be pre-allocated
+         * @return address
          */
-        inline void recv_addr(char *buf, size_t size, addr_t &remote_addr) {
+        inline addr_t accept(char *buf, size_t size) {
             LOG2<TRACE>() << "Server: Posting recv";
 
-            ERRCHK(fi_recv(ep, buf, size, nullptr, 0, nullptr));
+            bool b = false;
+            do {
+                b = ERRREPORT(fi_trecv(ep, buf, size, nullptr, FI_ADDR_UNSPEC, 1, 0, nullptr));
+            } while (!b);
+
             ERRCHK(wait_for_completion(rx_cq));
             uint64_t sizeOfAddress = *(uint64_t *) buf;
 
             LOG2<TRACE>() << "Server: Adding client to AV";
+
+            addr_t remote_addr;
 
             if (1 != fi_av_insert(av, buf + sizeof(uint64_t), 1, &remote_addr, 0, NULL)) {
                 std::cerr << "ERROR - fi_av_insert did not return 1" << std::endl;
@@ -169,6 +175,43 @@ namespace cse498 {
                 exit(1);
             }
             LOG2<TRACE>() << "Server: Added client to AV";
+            return remote_addr;
+        }
+
+        /**
+         * Asynchronously accepts connection
+         * @param buf registered buffer
+         * @param size
+         */
+        inline void async_accept(char *buf, size_t size) {
+            LOG2<TRACE>() << "Server: Posting recv";
+            bool b = false;
+            do {
+                b = ERRREPORT(fi_trecv(ep, buf, size, nullptr, FI_ADDR_UNSPEC, 1, 0, nullptr));
+            } while (!b);
+        }
+
+        /**
+         * Recv an address
+         * @param buf registered buffer
+         * @param size
+         * @return address
+         */
+        inline addr_t wait_accept(char *buf, size_t size) {
+            ERRCHK(wait_for_completion(rx_cq));
+            uint64_t sizeOfAddress = *(uint64_t *) buf;
+
+            LOG2<TRACE>() << "Server: Adding client to AV";
+
+            addr_t remote_addr;
+
+            if (1 != fi_av_insert(av, buf + sizeof(uint64_t), 1, &remote_addr, 0, NULL)) {
+                std::cerr << "ERROR - fi_av_insert did not return 1" << std::endl;
+                perror("Error");
+                exit(1);
+            }
+            LOG2<TRACE>() << "Server: Added client to AV";
+            return remote_addr;
         }
 
         /**
@@ -177,23 +220,43 @@ namespace cse498 {
          * @param size
          * @param remote_addr does not need to be pre-allocated
          */
-        inline void async_recv_addr(char *buf, size_t size, addr_t &remote_addr) {
-            DO_LOG(DEBUG) << "Server: Posting recv";
-            ERRCHK(fi_recv(ep, buf, size, nullptr, 0, nullptr));
+        [[deprecated("Use accept instead")]]
+        inline void recv_addr(char *buf, size_t size, addr_t &remote_addr) {
+            remote_addr = accept(buf, size);
         }
 
+        /**
+         * Recv an address, must be coupled with a send addr
+         * @param buf registered buffer (cannot be modified until wait_recv_addr)
+         * @param size
+         * @param remote_addr does not need to be pre-allocated
+         */
+        [[deprecated("Use async_accept instead")]]
+        inline void async_recv_addr(char *buf, size_t size, addr_t &remote_addr) {
+            async_accept(buf, size);
+        }
+
+        /**
+         * Wait to receive an address after calling async_recv_addr
+         * @param buf same registered buffer as before
+         * @param size
+         * @param remote_addr does not need to be pre-allocated
+         */
+        [[deprecated("Use wait_accept instead")]]
         inline void wait_recv_addr(char *buf, size_t size, addr_t &remote_addr) {
+            remote_addr = wait_accept(buf, size);
+        }
+
+        /**
+         * Recv message; crash on failure
+         * @param remote_addr remote address
+         * @param buf registered buffer
+         * @param size size of buffer
+         */
+        inline void recv(addr_t remote_addr, char *buf, size_t size) {
+            LOG2<TRACE>() << "Server: Posting recv";
+            ERRCHK(fi_trecv(ep, buf, size, nullptr, remote_addr, 2, 0, nullptr));
             ERRCHK(wait_for_completion(rx_cq));
-            uint64_t sizeOfAddress = *(uint64_t *) buf;
-
-            LOG2<TRACE>() << "Server: Adding client to AV";
-
-            if (1 != fi_av_insert(av, buf + sizeof(uint64_t), 1, &remote_addr, 0, NULL)) {
-                std::cerr << "ERROR - fi_av_insert did not return 1" << std::endl;
-                perror("Error");
-                exit(1);
-            }
-            LOG2<TRACE>() << "Server: Added client to AV";
         }
 
         /**
@@ -201,30 +264,64 @@ namespace cse498 {
          * @param remote_addr remote address
          * @param buf registered buffer
          * @param size size of buffer
+         * @return true on success, false on failure
          */
-        inline void recv(addr_t remote_addr, char *buf, size_t size) {
-            ERRCHK(fi_recv(ep, buf, size, nullptr, remote_addr, nullptr));
-            ERRCHK(wait_for_completion(rx_cq));
+        inline bool try_recv(addr_t remote_addr, char *buf, size_t size) {
+            LOG2<TRACE>() << "Server: Posting recv";
+            bool b = ERRREPORT(fi_trecv(ep, buf, size, nullptr, remote_addr, 2, 0, nullptr));
+            if (b) {
+                ERRCHK(wait_for_completion(rx_cq));
+                return true;
+            }
+            return false;
         }
 
         /**
-         * Send message
+         * Send message; crashes on failure
          * @param remote_addr remote address
          * @param buf not necessarily registered buffer
          * @param size size of buffer
          */
         inline void send(addr_t remote_addr, char *buf, size_t size) {
             LOG2<TRACE>() << "Server: Posting send";
-            ERRCHK(fi_send(ep, buf, size, nullptr, remote_addr, nullptr));
+            ERRCHK(fi_tsend(ep, buf, size, nullptr, remote_addr, 2, nullptr));
             ERRCHK(wait_for_completion(tx_cq));
-            LOG2<TRACE>() << "Server: Posting sent";
         }
 
+        /**
+         * Try to send a message
+         * @param remote_addr
+         * @param buf not necessarily registered buffer
+         * @param size size of buffer
+         * @return true on success, false on failure
+         */
+        inline bool try_send(addr_t remote_addr, char *buf, size_t size) {
+            LOG2<TRACE>() << "Server: Posting send";
+            bool b = ERRREPORT(fi_tsend(ep, buf, size, nullptr, remote_addr, 2, nullptr));
+            if (b) {
+                ERRCHK(wait_for_completion(tx_cq));
+                LOG2<TRACE>() << "Server: message sent";
+                return true;
+            }
+            LOG2<TRACE>() << "Server: message send failed";
+            return false;
+        }
+
+        /**
+         * Asynchronously send message
+         * @param remote_addr
+         * @param buf
+         * @param size
+         * @return true on success, false on failure
+         */
         inline bool async_send(addr_t remote_addr, char *buf, size_t size) {
             LOG2<TRACE>() << "Server: Posting send";
-            return ERRREPORT(fi_send(ep, buf, size, nullptr, remote_addr, nullptr));
+            return ERRREPORT(fi_tsend(ep, buf, size, nullptr, remote_addr, 2, nullptr));
         }
 
+        /**
+         * Wait for successful send to complete
+         */
         inline void wait_send() {
             ERRCHK(wait_for_completion(tx_cq));
             LOG2<TRACE>() << "Server: Posting sent";
@@ -241,6 +338,19 @@ namespace cse498 {
                              FI_WRITE | FI_REMOTE_WRITE | FI_READ | FI_REMOTE_READ, 0,
                              0, 0, &mr, NULL));
         }
+
+        friend inline void
+        bestEffortBroadcast(ConnectionlessServer &c, const std::vector<addr_t> &addresses, char *message,
+                            size_t messageSize);
+
+        friend inline void
+        bestEffortBroadcastReceiveFrom(ConnectionlessServer &c, addr_t address, char *buf, size_t sizeOfBuf);
+
+        friend inline bool
+        reliableBroadcastReceiveFrom(ConnectionlessServer &server, addr_t recvFrom, std::vector<addr_t> &clients,
+                                     char *buf,
+                                     size_t bufSize, const std::function<bool(char *, size_t)> &checkIfReceivedBefore,
+                                     const std::function<void(char *, size_t)> &markAsReceived);
 
     private:
 
@@ -260,6 +370,28 @@ namespace cse498 {
                     return ret;
                 }
             }
+        }
+
+        inline bool try_recv_tag(addr_t remote_addr, char *buf, size_t size, uint64_t tag) {
+            LOG2<TRACE>() << "Server: Posting recv";
+            bool b = ERRREPORT(fi_trecv(ep, buf, size, nullptr, remote_addr, tag, 0, nullptr));
+            if (b) {
+                ERRCHK(wait_for_completion(rx_cq));
+                return true;
+            }
+            return false;
+        }
+
+        inline bool try_send_tag(addr_t remote_addr, char *buf, size_t size, uint64_t tag) {
+            LOG2<TRACE>() << "Server: Posting send";
+            bool b = ERRREPORT(fi_tsend(ep, buf, size, nullptr, remote_addr, tag, nullptr));
+            if (b) {
+                ERRCHK(wait_for_completion(tx_cq));
+                LOG2<TRACE>() << "Server: message sent";
+                return true;
+            }
+            LOG2<TRACE>() << "Server: message send failed";
+            return false;
         }
 
         fi_info *fi, *hints;
@@ -287,7 +419,7 @@ namespace cse498 {
         ConnectionlessClient(const char *address, uint16_t port, uint32_t protocol = FI_PROTO_SOCK_TCP) {
             LOG2<TRACE>() << ("Getting fi provider");
             hints = fi_allocinfo();
-            hints->caps = FI_MSG;
+            hints->caps = FI_MSG | FI_TAGGED;
             hints->ep_attr->type = FI_EP_RDM;
             hints->ep_attr->protocol = protocol;
 
@@ -301,7 +433,7 @@ namespace cse498 {
             LOG2<TRACE>() << "Creating tx completion queue";
             memset(&cq_attr, 0, sizeof(cq_attr));
             cq_attr.wait_obj = FI_WAIT_NONE;
-            //cq_attr.format = FI_CQ_FORMAT_CONTEXT;
+            cq_attr.format = FI_CQ_FORMAT_TAGGED;
             cq_attr.size = fi->tx_attr->size;
             ERRCHK(fi_cq_open(domain, &cq_attr, &tx_cq, NULL));
             LOG2<TRACE>() << "Creating rx completion queue";
@@ -354,11 +486,11 @@ namespace cse498 {
         }
 
         /**
-         * Send address
-         * @param buf any buffer
-         * @param size size of buffeer
+         * Connect to server
+         * @param buf
+         * @param size
          */
-        inline void send_addr(char *buf, size_t size) {
+        inline void connect(char *buf, size_t size) {
             size_t addrlen = 0;
             fi_getname(&ep->fid, nullptr, &addrlen);
             char *addr = new char[addrlen];
@@ -372,9 +504,55 @@ namespace cse498 {
 
             assert(size >= (sizeof(uint64_t) + addrlen));
 
-            ERRCHK(fi_send(ep, buf, sizeof(uint64_t) + addrlen, nullptr, remote_addr, nullptr));
+            bool b = false;
+            do {
+                b = ERRREPORT(fi_tsend(ep, buf, sizeof(uint64_t) + addrlen, nullptr, remote_addr, 1, nullptr));
+            } while (!b);
             ERRCHK(wait_for_completion(tx_cq));
             delete[] addr;
+        }
+
+        /**
+         * Connect to server
+         * @param buf
+         * @param size
+         * @return returns false on failure
+         */
+        inline bool async_connect(char *buf, size_t size) {
+            size_t addrlen = 0;
+            fi_getname(&ep->fid, nullptr, &addrlen);
+            char *addr = new char[addrlen];
+            ERRCHK(fi_getname(&ep->fid, addr, &addrlen));
+
+            LOG2<TRACE>() << "Client: Sending (" << addrlen << ") " << (void *) addr << " to " << remote_addr;
+
+            memcpy(buf, &addrlen, sizeof(uint64_t));
+            memcpy(buf + sizeof(uint64_t), addr, addrlen);
+            LOG2<TRACE>() << "Client: Sending " << sizeof(uint64_t) + addrlen << "B in " << size << "B buffer";
+
+            assert(size >= (sizeof(uint64_t) + addrlen));
+            delete[] addr;
+            return ERRREPORT(fi_tsend(ep, buf, sizeof(uint64_t) + addrlen, nullptr, remote_addr, 1, nullptr));
+        }
+
+        /**
+         * Wait for completion of connect.
+         * @param buf
+         * @param size
+         */
+        inline void wait_connect(char *buf, size_t size){
+            ERRCHK(wait_for_completion(tx_cq));
+        }
+
+
+        /**
+         * Send address
+         * @param buf any buffer
+         * @param size size of buffeer
+         */
+        [[deprecated("Use connect instead")]]
+        inline void send_addr(char *buf, size_t size) {
+            connect(buf, size);
         }
 
         /**
@@ -382,6 +560,7 @@ namespace cse498 {
          * @param buf any buffer
          * @param size size of buffeer
          */
+        [[deprecated("Use async_connect instead")]]
         inline bool async_send_addr(char *buf, size_t size, void *&state) {
             size_t addrlen = 0;
             fi_getname(&ep->fid, nullptr, &addrlen);
@@ -398,9 +577,10 @@ namespace cse498 {
 
             state = addr;
 
-            return ERRREPORT(fi_send(ep, buf, sizeof(uint64_t) + addrlen, nullptr, remote_addr, nullptr));
+            return ERRREPORT(fi_tsend(ep, buf, sizeof(uint64_t) + addrlen, nullptr, remote_addr, 1, nullptr));
         }
 
+        [[deprecated("Use wait_connect instead")]]
         inline void async_wait_send_addr(char *buf, size_t size, void *&state) {
             char *addr = (char *) state;
             ERRCHK(wait_for_completion(tx_cq));
@@ -413,7 +593,7 @@ namespace cse498 {
          * @param size size of buffer
          */
         inline void recv(char *buf, size_t size) {
-            ERRCHK(fi_recv(ep, buf, size, nullptr, remote_addr, nullptr));
+            ERRCHK(fi_trecv(ep, buf, size, nullptr, remote_addr, 2, 0, nullptr));
             ERRCHK(wait_for_completion(rx_cq));
         }
 
@@ -423,13 +603,13 @@ namespace cse498 {
          * @param size size of buffer
          */
         inline void send(char *buf, size_t size) {
-            ERRCHK(fi_send(ep, buf, size, nullptr, remote_addr, nullptr));
+            ERRCHK(fi_tsend(ep, buf, size, nullptr, remote_addr, 2, nullptr));
             ERRCHK(wait_for_completion(tx_cq));
         }
 
         inline bool async_send(char *buf, size_t size) {
             LOG2<TRACE>() << "Client: Posting send";
-            return ERRREPORT(fi_send(ep, buf, size, nullptr, remote_addr, nullptr));
+            return ERRREPORT(fi_tsend(ep, buf, size, nullptr, remote_addr, 2, nullptr));
         }
 
         inline void wait_send() {
@@ -449,9 +629,20 @@ namespace cse498 {
                              0, 0, &mr, NULL));
         }
 
+        friend inline void
+        bestEffortBroadcast(std::vector<ConnectionlessClient> &clients, char *message, size_t messageSize);
+
+        friend inline void bestEffortBroadcastReceiveFrom(ConnectionlessClient &client, char *buf, size_t sizeOfBuf);
+
+        friend inline bool
+        reliableBroadcastReceiveFrom(ConnectionlessClient &receiveFrom, std::vector<ConnectionlessClient> &clients,
+                                     char *buf,
+                                     size_t bufSize, const std::function<bool(char *, size_t)> &checkIfReceivedBefore,
+                                     const std::function<void(char *, size_t)> &markAsReceived);
+
     private:
 
-        inline int wait_for_completion(struct fid_cq *cq) {
+        static inline int wait_for_completion(struct fid_cq *cq) {
             fi_cq_entry entry;
             int ret;
             while (1) {
@@ -467,6 +658,29 @@ namespace cse498 {
                     return ret;
                 }
             }
+        }
+
+        inline bool try_recv_tag(char *buf, size_t size, uint64_t tag) {
+            LOG2<TRACE>() << "Client: Posting recv";
+            bool b = ERRREPORT(fi_trecv(ep, buf, size, nullptr, remote_addr, tag, 0, nullptr));
+            if (b) {
+                ERRCHK(wait_for_completion(rx_cq));
+                LOG2<TRACE>() << "Client: message recv";
+                return true;
+            }
+            return false;
+        }
+
+        inline bool try_send_tag(char *buf, size_t size, uint64_t tag) {
+            LOG2<TRACE>() << "Client: Posting send";
+            bool b = ERRREPORT(fi_tsend(ep, buf, size, nullptr, remote_addr, tag, nullptr));
+            if (b) {
+                ERRCHK(wait_for_completion(tx_cq));
+                LOG2<TRACE>() << "Client: message sent";
+                return true;
+            }
+            LOG2<TRACE>() << "Client: message send failed";
+            return false;
         }
 
         fi_addr_t remote_addr;
@@ -516,7 +730,6 @@ namespace cse498 {
         };
     };
 
-
     /**
      * Performs best effort broadcast
      * @param c server
@@ -526,9 +739,13 @@ namespace cse498 {
      */
     inline void bestEffortBroadcast(ConnectionlessServer &c, const std::vector<addr_t> &addresses, char *message,
                                     size_t messageSize) {
+        DO_LOG(TRACE) << "Sending best effort from server";
+
         for (auto &a : addresses) {
-            c.send(a, message, messageSize);
+            while (!c.try_send_tag(a, message, messageSize, 3));
         }
+
+        DO_LOG(TRACE) << "Sent best effort from server";
     }
 
     /**
@@ -538,9 +755,13 @@ namespace cse498 {
      * @param messageSize size of message
      */
     inline void bestEffortBroadcast(std::vector<ConnectionlessClient> &clients, char *message, size_t messageSize) {
+        DO_LOG(TRACE) << "Sending best effort from client";
+
         for (auto &c : clients) {
-            c.send(message, messageSize);
+            while (!c.try_send_tag(message, messageSize, 3));
         }
+
+        DO_LOG(TRACE) << "Sent best effort from client";
     }
 
     /**
@@ -550,7 +771,9 @@ namespace cse498 {
      * @param sizeOfBuf buffer size
      */
     inline void bestEffortBroadcastReceiveFrom(ConnectionlessClient &client, char *buf, size_t sizeOfBuf) {
-        client.recv(buf, sizeOfBuf);
+        while (!client.try_recv_tag(buf, sizeOfBuf, 3));
+        DO_LOG(TRACE) << "Recv best effort from client";
+
     }
 
     /**
@@ -560,8 +783,10 @@ namespace cse498 {
      * @param buf buffer
      * @param sizeOfBuf buffer size
      */
-    inline void bestEffortBroadcastReceiveFrom(ConnectionlessServer &c, addr_t address, char *buf, size_t sizeOfBuf) {
-        c.recv(address, buf, sizeOfBuf);
+    inline void
+    bestEffortBroadcastReceiveFrom(ConnectionlessServer &c, addr_t address, char *buf, size_t sizeOfBuf) {
+        while (!c.try_recv_tag(address, buf, sizeOfBuf, 3));
+        DO_LOG(TRACE) << "Recv best effort from server";
     }
 
     /**
@@ -602,8 +827,7 @@ namespace cse498 {
                                  char *buf,
                                  size_t bufSize, const std::function<bool(char *, size_t)> &checkIfReceivedBefore,
                                  const std::function<void(char *, size_t)> &markAsReceived) {
-
-        receiveFrom.recv(buf, bufSize);
+        while (!receiveFrom.try_recv_tag(buf, bufSize, 3));
 
         if (!checkIfReceivedBefore(buf, bufSize)) {
             bestEffortBroadcast(clients, buf, bufSize);
@@ -612,6 +836,33 @@ namespace cse498 {
         }
         return false;
     }
+
+    /**
+     * Receive from
+     * @param server ConnectionlessServer to recv on
+     * @param receiveFrom node to receive from
+     * @param clients clients to send to
+     * @param buf buffer to use (registered)
+     * @param bufSize size of buffer to use
+     * @param checkIfReceivedBefore function to check if the message has been received before
+     * @param markAsReceived function to mark a message as received
+     * @return true if it has not been received before
+     */
+    inline bool
+    reliableBroadcastReceiveFrom(ConnectionlessServer &server, addr_t recvFrom, std::vector<addr_t> &clients,
+                                 char *buf,
+                                 size_t bufSize, const std::function<bool(char *, size_t)> &checkIfReceivedBefore,
+                                 const std::function<void(char *, size_t)> &markAsReceived) {
+        while (!server.try_recv_tag(recvFrom, buf, bufSize, 3));
+
+        if (!checkIfReceivedBefore(buf, bufSize)) {
+            bestEffortBroadcast(server, clients, buf, bufSize);
+            markAsReceived(buf, bufSize);
+            return true;
+        }
+        return false;
+    }
+
 
 }
 
