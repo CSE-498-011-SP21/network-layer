@@ -25,7 +25,7 @@ int main(int argc, char **argv) {
     c.registerMR(buf, 4096, mr);
 
     // we can use registered memory for send
-    c.send_addr(buf, 4096);
+    c.connect(buf, 4096);
 
     char *local = new char[3];
     memcpy(local, s, 3);

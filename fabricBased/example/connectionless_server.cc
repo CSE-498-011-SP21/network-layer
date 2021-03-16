@@ -27,7 +27,7 @@ int main(int argc, char **argv) {
     cse498::addr_t a;
 
     // we can use registered memory for send
-    c.recv_addr(buf, 4096, a);
+    a = c.accept(buf, 4096);
 
     // use registered memory to recv
     c.recv(a, buf, 3);
