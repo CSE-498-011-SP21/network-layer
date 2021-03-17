@@ -1,6 +1,18 @@
-cmake_minimum_required(VERSION 3.0)
+cmake_minimum_required(VERSION 3.14)
 
-project(NetworkLayer VERSION 1.0.0)
+project(NetworkLayer VERSION 1.1.0)
+
+include(FetchContent)
+
+FetchContent_Declare(
+        common
+        GIT_REPOSITORY git@github.com:CSE-498-011-SP21/common.git
+        GIT_TAG main
+)
+
+FetchContent_MakeAvailable(common)
+
+add_library(Common::kvcg_stuff ALIAS kvcg_stuff)
 
 set(CMAKE_CXX_STANDARD 17)
 
@@ -11,8 +23,6 @@ find_package(Doxygen)
 enable_testing()
 
 add_subdirectory(commonAPI)
-
-add_subdirectory(common)
 
 add_subdirectory(fabricBased)
 
@@ -30,6 +40,18 @@ install(EXPORT NetworklayerTargets
         FILE NetworklayerTargets.cmake
         NAMESPACE Networklayer::
         DESTINATION lib/cmake/Networklayer
+        )
+
+include(CMakePackageConfigHelpers)
+configure_package_config_file(${CMAKE_CURRENT_SOURCE_DIR}/cmake/Config.cmake.in
+        "${CMAKE_CURRENT_BINARY_DIR}/NetworkLayerConfig.cmake"
+        INSTALL_DESTINATION lib/cmake/NetworkLayer
+        )
+
+install(FILES
+        "${CMAKE_CURRENT_BINARY_DIR}/NetworkLayerConfig.cmake"
+#        "${CMAKE_CURRENT_BINARY_DIR}/NetworkLayerConfigVersion.cmake"
+        DESTINATION lib/cmake/NetworkLayer
         )
 
 set(CPACK_PACKAGE_VENDOR "dePaul, Jimmy, and Michael")
