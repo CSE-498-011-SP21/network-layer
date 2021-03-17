@@ -53,16 +53,6 @@ int main(int argc, char **argv) {
 		conn->wait_recv(buf, 128);
 		LOG2<INFO>() << "Received: " << buf;
 
-		std::chrono::milliseconds timespan(2000); // or whatever
-
-		std::this_thread::sleep_for(timespan);
-
-		char *b2 = new char[128];
-		conn->read_local(b2, 128, 0);
-
-		std::this_thread::sleep_for(timespan);
-		LOG2<INFO>() << "RMA Buf contains " << b2;
-
 		// std::string msg3 = "Was the MR read now?\0";
 		// LOG2<INFO>() << "Sending: " << msg3;
 		// conn->wait_send(msg3.c_str(), msg3.length() + 1);

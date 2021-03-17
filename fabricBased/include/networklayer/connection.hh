@@ -47,17 +47,19 @@ namespace cse498 {
          * Creates the passive side of a connection (it listens to a connection request from another machine using the other contructor)
          * 
          * This constructor is only intended for tests.
-         * 
+         * @param address address to use on the network, can be nullptr
          * @param on_listening Right after fi_listen has been called and another connection can request a connection. 
          **/
-        Connection(std::function<void()> on_listening) {
+        Connection(const char* address, std::function<void()> on_listening) {
             create_hints();
 
             LOG2<DEBUG>() << "Initializing passive connection";
-            SAFE_CALL(fi_getinfo(FI_VERSION(MAJOR_VERSION_USED, MINOR_VERSION_USED), nullptr, DEFAULT_PORT, FI_SOURCE, hints,
+            SAFE_CALL(fi_getinfo(FI_VERSION(MAJOR_VERSION_USED, MINOR_VERSION_USED), address, DEFAULT_PORT, FI_SOURCE,
+                                 hints,
                                  &info)); // TODO I don't beleive FI_SOURCE does anything. Should try to delete.
             LOG2<TRACE>() << "Creating fabric";
             SAFE_CALL(fi_fabric(info->fabric_attr, &fab, nullptr));
+            LOG2<DEBUG>() << "Using provider: " << info->fabric_attr->prov_name;
 
             open_eq();
 
@@ -102,7 +104,7 @@ namespace cse498 {
         /**
          * Creates the passive side of a connection (it listens to a connection request from another machine using the other contructor)
          **/
-        Connection() : Connection([](){}) {} // Its funny how many different braces this uses
+        Connection() : Connection(nullptr, []() {}) {} // Its funny how many different braces this uses
 
         /**
          * Creates the active side of a connection.
@@ -112,7 +114,9 @@ namespace cse498 {
             create_hints();
 
             LOG2<DEBUG>() << "Initializing client";
-            SAFE_CALL(fi_getinfo(FI_VERSION(MAJOR_VERSION_USED, MINOR_VERSION_USED), addr, DEFAULT_PORT, 0, hints, &info));
+            SAFE_CALL(fi_getinfo(FI_VERSION(MAJOR_VERSION_USED, MINOR_VERSION_USED), addr, DEFAULT_PORT, 0, hints,
+                                 &info));
+            LOG2<DEBUG>() << "Using provider: " << info->fabric_attr->prov_name;
 
             SAFE_CALL(fi_fabric(info->fabric_attr, &fab, nullptr));
 
@@ -121,7 +125,7 @@ namespace cse498 {
             setup_active_ep();
 
             LOG2<TRACE>() << "Sending connection request";
-            SAFE_CALL(fi_connect(ep, info->dest_addr, nullptr, 0));
+            while (fi_connect(ep, info->dest_addr, nullptr, 0) < 0);
 
             wait_for_eq_connected();
         }
@@ -212,26 +216,42 @@ namespace cse498 {
                 SAFE_CALL(fi_close(&mr->fid));
             }
             LOG2<TRACE>() << "Registering memory region";
-            SAFE_CALL(fi_mr_reg(domain, buf, size, access, 0, key, FI_MR_ENDPOINT, &mr, nullptr));
-            // SAFE_CALL(fi_mr_bind(mr, &ep->fid, 0));
-            // SAFE_CALL(fi_mr_enable(mr));
+            SAFE_CALL(fi_mr_reg(domain, buf, size, access, 0, key, 0, &mr, nullptr));
+            LOG2<INFO>() << "MR KEY:" << fi_mr_key(mr);
         }
 
-        inline void wait_write(const char* buf, size_t size, uint64_t addr, uint64_t key) {
+        /**
+         * Write from buf with given size to the addr with the given key
+         * Note addresses start at 0
+         * @param buf
+         * @param size
+         * @param addr
+         * @param key
+         */
+        inline void wait_write(const char *buf, size_t size, uint64_t addr, uint64_t key) {
             SAFE_CALL(fi_write(ep, buf, size, nullptr, 0, addr, key, nullptr));
+            LOG2<INFO>() << "Write " << key << "-" << addr << " sent";
             SAFE_CALL(wait_for_completion(tx_cq));
         }
 
-        inline void wait_read(char* buf, size_t size, uint64_t addr, uint64_t key) {
+        /**
+         * Read size bytes from the addr with the given key into buf
+         * @param buf
+         * @param size
+         * @param addr
+         * @param key
+         */
+        inline void wait_read(char *buf, size_t size, uint64_t addr, uint64_t key) {
             SAFE_CALL(fi_read(ep, buf, size, nullptr, 0, addr, key, nullptr));
-            // SAFE_CALL(wait_for_completion(rx_cq));
+            LOG2<INFO>() << "Read " << key << "-" << addr << " sent";
+            SAFE_CALL(wait_for_completion(tx_cq));
         }
 
-        inline void read_local(char* buf, size_t size, uint64_t addr) {
-            int ret = SAFE_CALL(fi_read(ep, buf, size, fi_mr_desc(mr), -1, addr, 0, nullptr));
-            LOG2<TRACE>() << "Return value: " << ret;
-            // SAFE_CALL(wait_for_completion(rx_cq));
-        }
+        /*inline void read_local(char *buf, size_t size, uint64_t addr, uint64_t key) {
+            int ret = SAFE_CALL(fi_read(ep, buf, size, fi_mr_desc(mr), ~0, addr, key, nullptr));
+            LOG2<INFO>() << "Read sent: " << ret;
+            SAFE_CALL(wait_for_completion(tx_cq));
+        }*/
 
     private:
         const char *DEFAULT_PORT = "8080";
@@ -252,7 +272,8 @@ namespace cse498 {
             fi_cq_msg_entry entry;
             int ret;
             while (1) {
-                ret = fi_cq_read(cq, &entry, 1); // TODO an rma write will likely cause the rx_cq to receive something, so I have to be careful about that. 
+                ret = fi_cq_read(cq, &entry,
+                                 1); // TODO an rma write will likely cause the rx_cq to receive something, so I have to be careful about that.
                 if (ret > 0) {
                     LOG2<INFO>() << "Entry flags " << entry.flags;
                     LOG2<INFO>() << "Entry rma " << (entry.flags & FI_RMA);
@@ -264,6 +285,7 @@ namespace cse498 {
                     // New error on queue
                     struct fi_cq_err_entry err_entry;
                     fi_cq_readerr(cq, &err_entry, 0);
+                    LOG2<ERROR>() << fi_cq_strerror(cq, err_entry.prov_errno, err_entry.err_data, nullptr, 0);
                     return ret;
                 }
             }
@@ -276,9 +298,10 @@ namespace cse498 {
          **/
         inline void create_hints() {
             hints = fi_allocinfo();
+            hints->caps = FI_MSG | FI_RMA | FI_ATOMIC;
             hints->ep_attr->type = FI_EP_MSG;
-            // hints->ep_attr->protocol = FI_PROTO_RXD;
-            hints->caps = FI_MSG;
+            //hints->ep_attr->protocol = FI_PROTO_SOCK_TCP;
+            hints->domain_attr->mr_mode = FI_MR_SCALABLE;
         }
 
         /**
