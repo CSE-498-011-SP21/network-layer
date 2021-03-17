@@ -56,7 +56,6 @@ namespace cse498 {
             LOG2<DEBUG>() << "Initializing passive connection";
             SAFE_CALL(fi_getinfo(FI_VERSION(MAJOR_VERSION_USED, MINOR_VERSION_USED), nullptr, DEFAULT_PORT, FI_SOURCE, hints,
                                  &info)); // TODO I don't beleive FI_SOURCE does anything. Should try to delete.
-
             LOG2<TRACE>() << "Creating fabric";
             SAFE_CALL(fi_fabric(info->fabric_attr, &fab, nullptr));
 
@@ -137,6 +136,9 @@ namespace cse498 {
             fi_close(&ep->fid);
             fi_close(&rx_cq->fid);
             fi_close(&tx_cq->fid);
+            if (mr != NULL) {
+                fi_close(&mr->fid);
+            }
         }
 
         /**
@@ -193,6 +195,44 @@ namespace cse498 {
             SAFE_CALL(wait_for_completion(rx_cq));
         }
 
+        /**
+         * Registers a new memory region which only works for this connection. If there is already
+         * a memory region registered then it will close the previous one and register this one. You
+         * can use this to change permissions for a memory region on a specific connection (by calling
+         * this function again on the same buf, but with the new access flags)
+         * 
+         * @param buf The buffer to register
+         * @param size The size of the buffer
+         * @param access The access flags for the memory region (FI_WRITE, FI_REMOTE_WRITE, FI_READ, and/or FI_REMOTE_READ. Bitwise or for multiple permissions)
+         * @param key The access key for the memory region. The other side of the connection should use the same key (0 works well for this)
+         **/
+        inline void register_mr(char *buf, size_t size, uint64_t access, uint64_t key) {
+            if (mr != NULL) {
+                LOG2<INFO>() << "Closing old memory region";
+                SAFE_CALL(fi_close(&mr->fid));
+            }
+            LOG2<TRACE>() << "Registering memory region";
+            SAFE_CALL(fi_mr_reg(domain, buf, size, access, 0, key, FI_MR_ENDPOINT, &mr, nullptr));
+            // SAFE_CALL(fi_mr_bind(mr, &ep->fid, 0));
+            // SAFE_CALL(fi_mr_enable(mr));
+        }
+
+        inline void wait_write(const char* buf, size_t size, uint64_t addr, uint64_t key) {
+            SAFE_CALL(fi_write(ep, buf, size, nullptr, 0, addr, key, nullptr));
+            SAFE_CALL(wait_for_completion(tx_cq));
+        }
+
+        inline void wait_read(char* buf, size_t size, uint64_t addr, uint64_t key) {
+            SAFE_CALL(fi_read(ep, buf, size, nullptr, 0, addr, key, nullptr));
+            // SAFE_CALL(wait_for_completion(rx_cq));
+        }
+
+        inline void read_local(char* buf, size_t size, uint64_t addr) {
+            int ret = SAFE_CALL(fi_read(ep, buf, size, fi_mr_desc(mr), -1, addr, 0, nullptr));
+            LOG2<TRACE>() << "Return value: " << ret;
+            // SAFE_CALL(wait_for_completion(rx_cq));
+        }
+
     private:
         const char *DEFAULT_PORT = "8080";
         const size_t MAX_MSG_SIZE = 4096;
@@ -205,21 +245,25 @@ namespace cse498 {
         fid_eq *eq;
         fid_ep *ep;
         fid_cq *rx_cq, *tx_cq;
+        fid_mr *mr;
 
         // Based on connectionless.hh, but not identical. This returns the value from fi_cq_read. 
         inline int wait_for_completion(struct fid_cq *cq) {
-            fi_cq_entry entry;
+            fi_cq_msg_entry entry;
             int ret;
             while (1) {
-                ret = fi_cq_read(cq, &entry, 1);
-                if (ret > 0) return ret;
+                ret = fi_cq_read(cq, &entry, 1); // TODO an rma write will likely cause the rx_cq to receive something, so I have to be careful about that. 
+                if (ret > 0) {
+                    LOG2<INFO>() << "Entry flags " << entry.flags;
+                    LOG2<INFO>() << "Entry rma " << (entry.flags & FI_RMA);
+                    LOG2<INFO>() << "Entry len " << entry.len;
+                    LOG2<INFO>() << "Entry ops " << entry.op_context;
+                    return ret;
+                }
                 if (ret != -FI_EAGAIN) {
                     // New error on queue
                     struct fi_cq_err_entry err_entry;
                     fi_cq_readerr(cq, &err_entry, 0);
-                    LOG2<TRACE>() << ("{0} {1}", fi_strerror(err_entry.err),
-                            fi_cq_strerror(cq, err_entry.prov_errno,
-                                           err_entry.err_data, NULL, 0));
                     return ret;
                 }
             }
@@ -233,6 +277,7 @@ namespace cse498 {
         inline void create_hints() {
             hints = fi_allocinfo();
             hints->ep_attr->type = FI_EP_MSG;
+            // hints->ep_attr->protocol = FI_PROTO_RXD;
             hints->caps = FI_MSG;
         }
 
@@ -258,6 +303,7 @@ namespace cse498 {
             fi_cq_attr cq_attr = {};
             cq_attr.wait_obj = FI_WAIT_NONE;
             cq_attr.size = info->tx_attr->size;
+            cq_attr.format = FI_CQ_FORMAT_MSG;
             LOG2<TRACE>() << "Creating tx completion queue";
             SAFE_CALL(fi_cq_open(domain, &cq_attr, &tx_cq, NULL));
             cq_attr.size = info->rx_attr->size;
