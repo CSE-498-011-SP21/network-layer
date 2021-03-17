@@ -47,18 +47,19 @@ namespace cse498 {
          * Creates the passive side of a connection (it listens to a connection request from another machine using the other contructor)
          * 
          * This constructor is only intended for tests.
-         * 
+         * @param address address to use on the network, can be nullptr
          * @param on_listening Right after fi_listen has been called and another connection can request a connection. 
          **/
-        Connection(std::function<void()> on_listening) {
+        Connection(const char* address, std::function<void()> on_listening) {
             create_hints();
 
             LOG2<DEBUG>() << "Initializing passive connection";
-            SAFE_CALL(fi_getinfo(FI_VERSION(MAJOR_VERSION_USED, MINOR_VERSION_USED), nullptr, DEFAULT_PORT, FI_SOURCE, hints,
+            SAFE_CALL(fi_getinfo(FI_VERSION(MAJOR_VERSION_USED, MINOR_VERSION_USED), address, DEFAULT_PORT, FI_SOURCE,
+                                 hints,
                                  &info)); // TODO I don't beleive FI_SOURCE does anything. Should try to delete.
-
             LOG2<TRACE>() << "Creating fabric";
             SAFE_CALL(fi_fabric(info->fabric_attr, &fab, nullptr));
+            LOG2<DEBUG>() << "Using provider: " << info->fabric_attr->prov_name;
 
             open_eq();
 
@@ -103,7 +104,7 @@ namespace cse498 {
         /**
          * Creates the passive side of a connection (it listens to a connection request from another machine using the other contructor)
          **/
-        Connection() : Connection([](){}) {} // Its funny how many different braces this uses
+        Connection() : Connection(nullptr, []() {}) {} // Its funny how many different braces this uses
 
         /**
          * Creates the active side of a connection.
@@ -113,7 +114,9 @@ namespace cse498 {
             create_hints();
 
             LOG2<DEBUG>() << "Initializing client";
-            SAFE_CALL(fi_getinfo(FI_VERSION(MAJOR_VERSION_USED, MINOR_VERSION_USED), addr, DEFAULT_PORT, 0, hints, &info));
+            SAFE_CALL(fi_getinfo(FI_VERSION(MAJOR_VERSION_USED, MINOR_VERSION_USED), addr, DEFAULT_PORT, 0, hints,
+                                 &info));
+            LOG2<DEBUG>() << "Using provider: " << info->fabric_attr->prov_name;
 
             SAFE_CALL(fi_fabric(info->fabric_attr, &fab, nullptr));
 
@@ -122,7 +125,7 @@ namespace cse498 {
             setup_active_ep();
 
             LOG2<TRACE>() << "Sending connection request";
-            SAFE_CALL(fi_connect(ep, info->dest_addr, nullptr, 0));
+            while (fi_connect(ep, info->dest_addr, nullptr, 0) < 0);
 
             wait_for_eq_connected();
         }
@@ -137,6 +140,9 @@ namespace cse498 {
             fi_close(&ep->fid);
             fi_close(&rx_cq->fid);
             fi_close(&tx_cq->fid);
+            if (mr != NULL) {
+                fi_close(&mr->fid);
+            }
         }
 
         /**
@@ -193,6 +199,60 @@ namespace cse498 {
             SAFE_CALL(wait_for_completion(rx_cq));
         }
 
+        /**
+         * Registers a new memory region which only works for this connection. If there is already
+         * a memory region registered then it will close the previous one and register this one. You
+         * can use this to change permissions for a memory region on a specific connection (by calling
+         * this function again on the same buf, but with the new access flags)
+         * 
+         * @param buf The buffer to register
+         * @param size The size of the buffer
+         * @param access The access flags for the memory region (FI_WRITE, FI_REMOTE_WRITE, FI_READ, and/or FI_REMOTE_READ. Bitwise or for multiple permissions)
+         * @param key The access key for the memory region. The other side of the connection should use the same key (0 works well for this)
+         **/
+        inline void register_mr(char *buf, size_t size, uint64_t access, uint64_t key) {
+            if (mr != NULL) {
+                LOG2<INFO>() << "Closing old memory region";
+                SAFE_CALL(fi_close(&mr->fid));
+            }
+            LOG2<TRACE>() << "Registering memory region";
+            SAFE_CALL(fi_mr_reg(domain, buf, size, access, 0, key, 0, &mr, nullptr));
+            LOG2<INFO>() << "MR KEY:" << fi_mr_key(mr);
+        }
+
+        /**
+         * Write from buf with given size to the addr with the given key
+         * Note addresses start at 0
+         * @param buf
+         * @param size
+         * @param addr
+         * @param key
+         */
+        inline void wait_write(const char *buf, size_t size, uint64_t addr, uint64_t key) {
+            SAFE_CALL(fi_write(ep, buf, size, nullptr, 0, addr, key, nullptr));
+            LOG2<INFO>() << "Write " << key << "-" << addr << " sent";
+            SAFE_CALL(wait_for_completion(tx_cq));
+        }
+
+        /**
+         * Read size bytes from the addr with the given key into buf
+         * @param buf
+         * @param size
+         * @param addr
+         * @param key
+         */
+        inline void wait_read(char *buf, size_t size, uint64_t addr, uint64_t key) {
+            SAFE_CALL(fi_read(ep, buf, size, nullptr, 0, addr, key, nullptr));
+            LOG2<INFO>() << "Read " << key << "-" << addr << " sent";
+            SAFE_CALL(wait_for_completion(tx_cq));
+        }
+
+        /*inline void read_local(char *buf, size_t size, uint64_t addr, uint64_t key) {
+            int ret = SAFE_CALL(fi_read(ep, buf, size, fi_mr_desc(mr), ~0, addr, key, nullptr));
+            LOG2<INFO>() << "Read sent: " << ret;
+            SAFE_CALL(wait_for_completion(tx_cq));
+        }*/
+
     private:
         const char *DEFAULT_PORT = "8080";
         const size_t MAX_MSG_SIZE = 4096;
@@ -205,21 +265,27 @@ namespace cse498 {
         fid_eq *eq;
         fid_ep *ep;
         fid_cq *rx_cq, *tx_cq;
+        fid_mr *mr;
 
         // Based on connectionless.hh, but not identical. This returns the value from fi_cq_read. 
         inline int wait_for_completion(struct fid_cq *cq) {
-            fi_cq_entry entry;
+            fi_cq_msg_entry entry;
             int ret;
             while (1) {
-                ret = fi_cq_read(cq, &entry, 1);
-                if (ret > 0) return ret;
+                ret = fi_cq_read(cq, &entry,
+                                 1); // TODO an rma write will likely cause the rx_cq to receive something, so I have to be careful about that.
+                if (ret > 0) {
+                    LOG2<INFO>() << "Entry flags " << entry.flags;
+                    LOG2<INFO>() << "Entry rma " << (entry.flags & FI_RMA);
+                    LOG2<INFO>() << "Entry len " << entry.len;
+                    LOG2<INFO>() << "Entry ops " << entry.op_context;
+                    return ret;
+                }
                 if (ret != -FI_EAGAIN) {
                     // New error on queue
                     struct fi_cq_err_entry err_entry;
                     fi_cq_readerr(cq, &err_entry, 0);
-                    LOG2<TRACE>() << ("{0} {1}", fi_strerror(err_entry.err),
-                            fi_cq_strerror(cq, err_entry.prov_errno,
-                                           err_entry.err_data, NULL, 0));
+                    LOG2<ERROR>() << fi_cq_strerror(cq, err_entry.prov_errno, err_entry.err_data, nullptr, 0);
                     return ret;
                 }
             }
@@ -232,8 +298,10 @@ namespace cse498 {
          **/
         inline void create_hints() {
             hints = fi_allocinfo();
+            hints->caps = FI_MSG | FI_RMA | FI_ATOMIC;
             hints->ep_attr->type = FI_EP_MSG;
-            hints->caps = FI_MSG;
+            //hints->ep_attr->protocol = FI_PROTO_SOCK_TCP;
+            hints->domain_attr->mr_mode = FI_MR_SCALABLE;
         }
 
         /**
@@ -258,6 +326,7 @@ namespace cse498 {
             fi_cq_attr cq_attr = {};
             cq_attr.wait_obj = FI_WAIT_NONE;
             cq_attr.size = info->tx_attr->size;
+            cq_attr.format = FI_CQ_FORMAT_MSG;
             LOG2<TRACE>() << "Creating tx completion queue";
             SAFE_CALL(fi_cq_open(domain, &cq_attr, &tx_cq, NULL));
             cq_attr.size = info->rx_attr->size;
