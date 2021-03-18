@@ -24,12 +24,13 @@ int main(int argc, char **argv) {
 
     while(start){
         std::cout << start->fabric_attr->name << std::endl;
-        std::cout << (start->caps & FI_ATOMIC ? "FI_ATOMIC" : "NO FI_ATOMIC") << std::endl;
-        std::cout << (start->caps & FI_FENCE ? "FI_FENCE" : "NO FI_FENCE") << std::endl;
-        std::cout << (start->caps & FI_MSG ? "FI_MSG" : "NO FI_MSG") << std::endl;
-        std::cout << (start->caps & FI_READ ? "FI_READ" : "NO FI_READ") << std::endl;
-        std::cout << (start->caps & FI_RMA ? "FI_RMA" : "NO FI_RMA") << std::endl;
+        std::cout << (start->caps & FI_ATOMIC ? "HAS FI_ATOMIC" : "NO FI_ATOMIC") << std::endl;
+        std::cout << (start->caps & FI_FENCE ? "HAS FI_FENCE" : "NO FI_FENCE") << std::endl;
+        std::cout << (start->caps & FI_MSG ? "HAS FI_MSG" : "NO FI_MSG") << std::endl;
+        std::cout << (start->caps & FI_READ ? "HAS FI_READ" : "NO FI_READ") << std::endl;
+        std::cout << (start->caps & FI_RMA ? "HAS FI_RMA" : "NO FI_RMA") << std::endl;
         std::cout << (start->caps & FI_HMEM ? "HAS FI_HMEM" : "NO FI_HMEM") << std::endl;
+        std::cout << (start->caps & FI_TAGGED ? "HAS FI_TAGGED" : "NO FI_TAGGED") << std::endl;
 
         std::cout << std::endl;
         start = start->next;

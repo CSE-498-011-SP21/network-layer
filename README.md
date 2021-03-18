@@ -39,5 +39,5 @@ static_assert(NETWORK_VER_MAJOR == 0
 
 ## Notes
 
-Broadcast primitives on connectionless clients and servers should be used alone
-(i.e. without send and receive ever used on client and server)
+Broadcast primitives on connectionless clients and servers can be used in conjunction with
+send, recv, etc.
