@@ -265,7 +265,7 @@ namespace cse498 {
         fid_eq *eq;
         fid_ep *ep;
         fid_cq *rx_cq, *tx_cq;
-        fid_mr *mr;
+        fid_mr *mr = NULL;
 
         // Based on connectionless.hh, but not identical. This returns the value from fi_cq_read. 
         inline int wait_for_completion(struct fid_cq *cq) {
