@@ -38,8 +38,6 @@ static_assert(FI_MAJOR_VERSION == MAJOR_VERSION_USED && FI_MINOR_VERSION >= MINO
 #endif
 
 namespace cse498 {
-
-    using addr_t = fi_addr_t;
     /**
      * A basic wrapper around fabric connected communications. Can currently send and receive messages.
      **/
@@ -158,6 +156,7 @@ namespace cse498 {
          **/
         inline void wait_send(const char *data, const size_t size) {
             async_send(data, size);
+            LOG2<DEBUG3>() << "Sending " << size << " bytes";
             wait_for_sends();
         }
 
@@ -186,6 +185,7 @@ namespace cse498 {
          **/
         inline void wait_for_sends() {
             while (msg_sends > 0) {
+                LOG2<DEBUG3>() << "Waiting for " << msg_sends << " message(s) to send.";
                 msg_sends -= SAFE_CALL(wait_for_completion(tx_cq));
             }
         }
@@ -198,10 +198,9 @@ namespace cse498 {
          **/
         inline void wait_recv(char *buf, size_t max_len) {
             SAFE_CALL(fi_recv(ep, buf, max_len, nullptr, 0, nullptr));
+            LOG2<DEBUG3>() << "Receiving up to " << max_len << " bytes";
             SAFE_CALL(wait_for_completion(rx_cq));
         }
-
-
 
         /**
          * Registers a new memory region which only works for this connection. If there is already
@@ -234,7 +233,7 @@ namespace cse498 {
          */
         inline void wait_write(const char *buf, size_t size, uint64_t addr, uint64_t key) {
             SAFE_CALL(fi_write(ep, buf, size, nullptr, 0, addr, key, nullptr));
-            LOG2<INFO>() << "Write " << key << "-" << addr << " sent";
+            LOG2<DEBUG3>() << "Write " << key << "-" << addr << " sent";
             SAFE_CALL(wait_for_completion(tx_cq));
         }
 
@@ -247,7 +246,7 @@ namespace cse498 {
          */
         inline void wait_read(char *buf, size_t size, uint64_t addr, uint64_t key) {
             SAFE_CALL(fi_read(ep, buf, size, nullptr, 0, addr, key, nullptr));
-            LOG2<INFO>() << "Read " << key << "-" << addr << " sent";
+            LOG2<DEBUG3>() << "Read " << key << "-" << addr << " sent";
             SAFE_CALL(wait_for_completion(tx_cq));
         }
 
@@ -269,7 +268,7 @@ namespace cse498 {
         fid_eq *eq;
         fid_ep *ep;
         fid_cq *rx_cq, *tx_cq;
-        fid_mr *mr;
+        fid_mr *mr = NULL;
 
         // Based on connectionless.hh, but not identical. This returns the value from fi_cq_read. 
         inline int wait_for_completion(struct fid_cq *cq) {
@@ -279,10 +278,10 @@ namespace cse498 {
                 ret = fi_cq_read(cq, &entry,
                                  1); // TODO an rma write will likely cause the rx_cq to receive something, so I have to be careful about that.
                 if (ret > 0) {
-                    LOG2<INFO>() << "Entry flags " << entry.flags;
-                    LOG2<INFO>() << "Entry rma " << (entry.flags & FI_RMA);
-                    LOG2<INFO>() << "Entry len " << entry.len;
-                    LOG2<INFO>() << "Entry ops " << entry.op_context;
+                    LOG2<TRACE>() << "Entry flags " << entry.flags;
+                    LOG2<TRACE>() << "Entry rma " << (entry.flags & FI_RMA);
+                    LOG2<TRACE>() << "Entry len " << entry.len;
+                    LOG2<TRACE>() << "Entry ops " << entry.op_context;
                     return ret;
                 }
                 if (ret != -FI_EAGAIN) {

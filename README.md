@@ -1,4 +1,5 @@
 # Network Layer
+
 Network layer code.
 
 ## Requirements
@@ -9,7 +10,8 @@ Network layer code.
 - doxygen optional to build documentation
 
 Run the following to ensure the network layer is working:
-```
+
+```bash
 git submodule init
 git submodule update
 ./vcpkg/bootstrap-vcpkg.sh
@@ -29,6 +31,7 @@ Make sure to write a static assert in your program that you are using the correc
 by including networklayer/config.hh.
 
 Example:
+
 ```c++
 #include <networklayer/config.hh>
 static_assert(NETWORK_VER_MAJOR == 0 
@@ -36,6 +39,12 @@ static_assert(NETWORK_VER_MAJOR == 0
             && NETWORK_VER_PATCH == 1, 
             "Need to ensure using the correct version");
 ```
+
+## Building
+
+To build in docker generate a public/private keypair using ssh-keygen and specify the
+output file as docker\_rsa. Register this pair with github.
+Then use docker build to build the container.
 
 ## Notes
 

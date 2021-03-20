@@ -3,3 +3,5 @@
 .DS_STORE
 /.vagrant
 /.vscode
+/docker_rsa
+/docker_rsa.pub
