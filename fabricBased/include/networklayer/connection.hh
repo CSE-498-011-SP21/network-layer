@@ -205,9 +205,9 @@ namespace cse498 {
 
         /**
          * Registers a new memory region which only works for this connection. If there is already
-         * a memory region registered then it will close the previous one and register this one. You
-         * can use this to change permissions for a memory region on a specific connection (by calling
-         * this function again on the same buf, but with the new access flags)
+         * a memory region registered with the same key then it will close the previous one and register 
+         * this one. You can use this to change permissions for a memory region on a specific connection 
+         * (by calling this function again on the same buf, but with the new access flags)
          * 
          * @param buf The buffer to register
          * @param size The size of the buffer
