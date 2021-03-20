@@ -12,6 +12,7 @@
 
 #include <functional>
 #include <cstring>
+#include <map>
 
 /**
  * Checks if the value is negative and if so prints the error, otherwise returns the value. 
@@ -140,8 +141,8 @@ namespace cse498 {
             fi_close(&ep->fid);
             fi_close(&rx_cq->fid);
             fi_close(&tx_cq->fid);
-            if (mr != NULL) {
-                fi_close(&mr->fid);
+            for (auto it = mrs->begin(); it != mrs->end(); ++it) {
+                fi_close(&it->second->fid);
             }
         }
 
@@ -212,15 +213,19 @@ namespace cse498 {
          * @param size The size of the buffer
          * @param access The access flags for the memory region (FI_WRITE, FI_REMOTE_WRITE, FI_READ, and/or FI_REMOTE_READ. Bitwise or for multiple permissions)
          * @param key The access key for the memory region. The other side of the connection should use the same key (0 works well for this)
+         * @return True if there was another region with the same key that needed to be closed. 
          **/
-        inline void register_mr(char *buf, size_t size, uint64_t access, uint64_t key) {
-            if (mr != NULL) {
+        inline bool register_mr(char *buf, size_t size, uint64_t access, uint64_t key) {
+            auto elem = mrs->find(key);
+            if (elem == mrs->end()) {
+                mrs->insert({key, create_mr(buf, size, access, key)});
+                return false;
+            } else {
                 LOG2<INFO>() << "Closing old memory region";
-                SAFE_CALL(fi_close(&mr->fid));
+                SAFE_CALL(fi_close(&elem->second->fid));
+                elem->second = create_mr(buf, size, access, key);
+                return true;
             }
-            LOG2<TRACE>() << "Registering memory region";
-            SAFE_CALL(fi_mr_reg(domain, buf, size, access, 0, key, 0, &mr, nullptr));
-            LOG2<INFO>() << "MR KEY:" << fi_mr_key(mr);
         }
 
         /**
@@ -268,7 +273,7 @@ namespace cse498 {
         fid_eq *eq;
         fid_ep *ep;
         fid_cq *rx_cq, *tx_cq;
-        fid_mr *mr = NULL;
+        std::map<uint64_t, fid_mr*> *mrs = new std::map<uint64_t, fid_mr*>();
 
         // Based on connectionless.hh, but not identical. This returns the value from fi_cq_read. 
         inline int wait_for_completion(struct fid_cq *cq) {
@@ -292,6 +297,14 @@ namespace cse498 {
                     return ret;
                 }
             }
+        }
+
+        inline fid_mr* create_mr(char *buf, size_t size, uint64_t access, uint64_t key) {
+            fid_mr *mr;
+            LOG2<TRACE>() << "Registering memory region";
+            SAFE_CALL(fi_mr_reg(domain, buf, size, access, 0, key, 0, &mr, nullptr));
+            LOG2<INFO>() << "MR KEY:" << fi_mr_key(mr);
+            return mr;
         }
 
         /**
