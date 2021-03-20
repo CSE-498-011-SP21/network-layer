@@ -8,21 +8,22 @@
 void rbc(std::vector<cse498::Connection> &connections, const char *message, size_t messageSize);
 
 TEST(connectionTest, connection_async_send_recv) {
+    int port = 8080;
     std::atomic_bool listening = false;
     const std::string msg = "potato\0";
 
-    auto f = std::async([&msg, &listening]() {
+    auto f = std::async([&msg, &port, &listening]() {
         // c1 stuff
         const char* addr = "127.0.0.1";
 
-        cse498::Connection *c1 = new cse498::Connection(addr, [&listening]() { listening = true; });
+        cse498::Connection *c1 = new cse498::Connection(addr, port, [&listening]() { listening = true; });
         c1->async_send(msg.c_str(), msg.length() + 1);
         c1->wait_for_sends();
     });
 
     while (!listening);
     // c2 stuff
-    cse498::Connection *c2 = new cse498::Connection("127.0.0.1");
+    cse498::Connection *c2 = new cse498::Connection("127.0.0.1", port);
 
     char *buf = new char[128];
     c2->wait_recv(buf, 128);
@@ -30,15 +31,16 @@ TEST(connectionTest, connection_async_send_recv) {
 }
 
 TEST(connectionTest, connection_wait_send_recv_response) {
+    int port = 8080;
     std::atomic_bool listening = false;
     const std::string msg = "potato\0";
     const std::string msg_res = "potato\0";
 
-    auto f = std::async([&msg, &msg_res, &listening]() {
+    auto f = std::async([&msg, &port, &msg_res, &listening]() {
         // c1 stuff
         const char* addr = "127.0.0.1";
 
-        cse498::Connection *c1 = new cse498::Connection(addr, [&listening]() { listening = true; });
+        cse498::Connection *c1 = new cse498::Connection(addr, port, [&listening]() { listening = true; });
         c1->wait_send(msg.c_str(), msg.length() + 1);
 
         char *buf = new char[128];
@@ -48,7 +50,7 @@ TEST(connectionTest, connection_wait_send_recv_response) {
 
     while (!listening);
     // c2 stuff
-    cse498::Connection *c2 = new cse498::Connection("127.0.0.1");
+    cse498::Connection *c2 = new cse498::Connection("127.0.0.1", port);
 
     char *buf = new char[128];
     c2->wait_recv(buf, 128);
@@ -57,20 +59,21 @@ TEST(connectionTest, connection_wait_send_recv_response) {
 }
 
 TEST(connectionTest, connection_send_recv_multiple_connections) {
+    int port = 8080;
     std::atomic_bool c0_listening_for_c1 = false;
     std::atomic_bool c0_listening_for_c2 = false;
     std::atomic_bool c1_connected = false;
     const std::string c0_to_c1_msg = "Hi c1!\0";
     const std::string c0_to_c2_msg = "Howdy c2!\0";
 
-    auto f = std::async([&c0_to_c1_msg, &c0_to_c2_msg, &c0_listening_for_c1, &c0_listening_for_c2]() {
+    auto f = std::async([&c0_to_c1_msg, &c0_to_c2_msg, &port, &c0_listening_for_c1, &c0_listening_for_c2]() {
         // c0 stuff
         const char* addr = "127.0.0.1";
 
         // c1's connection to c0
-        cse498::Connection *c0_c1 = new cse498::Connection(addr, [&c0_listening_for_c1]() { c0_listening_for_c1 = true; });
+        cse498::Connection *c0_c1 = new cse498::Connection(addr, port, [&c0_listening_for_c1]() { c0_listening_for_c1 = true; });
         // c2's connection to c0
-        cse498::Connection *c0_c2 = new cse498::Connection(addr, [&c0_listening_for_c2]() { c0_listening_for_c2 = true; });
+        cse498::Connection *c0_c2 = new cse498::Connection(addr, port, [&c0_listening_for_c2]() { c0_listening_for_c2 = true; });
 
 
         c0_c1->async_send(c0_to_c1_msg.c_str(), c0_to_c1_msg.length() + 1);
@@ -79,10 +82,10 @@ TEST(connectionTest, connection_send_recv_multiple_connections) {
         c0_c2->wait_for_sends();
     });
 
-    auto f2 = std::async([&c0_to_c1_msg, &c0_listening_for_c1]() {
+    auto f2 = std::async([&c0_to_c1_msg, &port, &c0_listening_for_c1]() {
         // c1 stuff
         while (!c0_listening_for_c1);
-        cse498::Connection *c1 = new cse498::Connection("127.0.0.1");
+        cse498::Connection *c1 = new cse498::Connection("127.0.0.1", port);
 
         char *buf = new char[128];
         c1->wait_recv(buf, 128);
@@ -91,7 +94,7 @@ TEST(connectionTest, connection_send_recv_multiple_connections) {
 
     while (!c0_listening_for_c2);
     // c2 stuff
-    cse498::Connection *c2 = new cse498::Connection("127.0.0.1");
+    cse498::Connection *c2 = new cse498::Connection("127.0.0.1", port);
 
     char *buf = new char[128];
     c2->wait_recv(buf, 128);
@@ -99,13 +102,14 @@ TEST(connectionTest, connection_send_recv_multiple_connections) {
 }
 
 TEST(connectionTest, connection_broadcast) {
+    int port = 8080;
     std::atomic_bool listening = false;
     const std::string msg = "wowww (owen wilson voice\0";
     
 
-    auto f = std::async([&msg, &listening]() {
+    auto f = std::async([&msg, &port, &listening]() {
         const char* addr = "127.0.0.1";
-        cse498::Connection *c1 = new cse498::Connection(addr, [&listening]() {listening = true;});
+        cse498::Connection *c1 = new cse498::Connection(addr, port, [&listening]() {listening = true;});
 
         std::vector<cse498::Connection> v;
         v.push_back(*c1);
@@ -115,7 +119,7 @@ TEST(connectionTest, connection_broadcast) {
 
     while (!listening);
 
-    cse498::Connection *c2 = new cse498::Connection("127.0.0.1");
+    cse498::Connection *c2 = new cse498::Connection("127.0.0.1", port);
 
     char *buf2 = new char[4096];
     std::vector<cse498::Connection> v;
@@ -128,6 +132,7 @@ TEST(connectionTest, connection_broadcast) {
 }
 
 TEST(connectionTest, connection_rma) {
+    int port = 8080;
     std::atomic_bool listening = false;
     std::atomic_bool done = false;
     std::atomic_bool done2 = false;
@@ -135,10 +140,10 @@ TEST(connectionTest, connection_rma) {
     std::atomic_bool latch = false;
     volatile char *remoteAccess = new char[sizeof(uint64_t)];
 
-    auto f = std::async([&listening, &done, &done2, &latch, &remoteAccess]() {
+    auto f = std::async([&listening, &port, &done, &done2, &latch, &remoteAccess]() {
         // c1 stuff
         const char* addr = "127.0.0.1";
-        cse498::Connection *c1 = new cse498::Connection(addr, [&listening]() { listening = true; });
+        cse498::Connection *c1 = new cse498::Connection(addr, port, [&listening]() { listening = true; });
 
         *((uint64_t *) remoteAccess) = ~0;
         c1->register_mr((char *) remoteAccess, sizeof(uint64_t), FI_WRITE | FI_REMOTE_WRITE | FI_READ | FI_REMOTE_READ,
@@ -153,7 +158,7 @@ TEST(connectionTest, connection_rma) {
 
     while (!listening);
     // c2 stuff
-    cse498::Connection *c2 = new cse498::Connection("127.0.0.1");
+    cse498::Connection *c2 = new cse498::Connection("127.0.0.1", port);
 
     char *buf = new char[sizeof(uint64_t)];
     *((uint64_t *) buf) = 10;
@@ -186,8 +191,9 @@ TEST(connectionTest, connection_changing_rma_perms) {
     std::atomic_bool c2_done = false;
     const std::string c0_to_c1_msg = "Hi c1!\0";
     const std::string c0_to_c2_msg = "Howdy c2!\0";
+    int port = 8080;
 
-    auto f = std::async([&c0_to_c1_msg, &c0_to_c2_msg, &c0_listening_for_c1, &c0_listening_for_c2, &mr_registered, &mr1_wrote, &mr2_wrote, &perms_updated, &c2_done, &c0_done]() {
+    auto f = std::async([&c0_to_c1_msg, &c0_to_c2_msg, &port, &c0_listening_for_c1, &c0_listening_for_c2, &mr_registered, &mr1_wrote, &mr2_wrote, &perms_updated, &c2_done, &c0_done]() {
         // c0 stuff
         const char* addr = "127.0.0.1";
 
@@ -197,9 +203,9 @@ TEST(connectionTest, connection_changing_rma_perms) {
         *((uint64_t *) remoteAccess2) = 5;
 
         // c1's connection to c0
-        cse498::Connection *c0_c1 = new cse498::Connection(addr, [&c0_listening_for_c1]() { c0_listening_for_c1 = true; });
+        cse498::Connection *c0_c1 = new cse498::Connection(addr, port, [&c0_listening_for_c1]() { c0_listening_for_c1 = true; });
         // c2's connection to c0
-        cse498::Connection *c0_c2 = new cse498::Connection(addr, [&c0_listening_for_c2]() { c0_listening_for_c2 = true; });
+        cse498::Connection *c0_c2 = new cse498::Connection(addr, port, [&c0_listening_for_c2]() { c0_listening_for_c2 = true; });
         ASSERT_EQ(false, c0_c1->register_mr((char *) remoteAccess, sizeof(uint64_t), FI_WRITE | FI_REMOTE_WRITE | FI_READ | FI_REMOTE_READ, 1));
         ASSERT_EQ(false, c0_c2->register_mr((char *) remoteAccess, sizeof(uint64_t), FI_WRITE | FI_REMOTE_WRITE | FI_READ | FI_REMOTE_READ, 1));
         ASSERT_EQ(false, c0_c1->register_mr((char *) remoteAccess2, sizeof(uint64_t), FI_WRITE | FI_REMOTE_WRITE | FI_READ | FI_REMOTE_READ, 2));
@@ -220,10 +226,10 @@ TEST(connectionTest, connection_changing_rma_perms) {
         c0_done = true;
     });
 
-    auto f2 = std::async([&c0_to_c1_msg, &c0_listening_for_c1, &mr_registered, &mr2_wrote, &perms_updated, &c1_done, &c0_done]() {
+    auto f2 = std::async([&c0_to_c1_msg, &c0_listening_for_c1, &port, &mr_registered, &mr2_wrote, &perms_updated, &c1_done, &c0_done]() {
         // c1 stuff
         while (!c0_listening_for_c1);
-        cse498::Connection *c1 = new cse498::Connection("127.0.0.1");
+        cse498::Connection *c1 = new cse498::Connection("127.0.0.1", port);
         char *buf = new char[sizeof(uint64_t)];
 
         while (!mr_registered);
@@ -243,7 +249,7 @@ TEST(connectionTest, connection_changing_rma_perms) {
 
     while (!c0_listening_for_c2);
     // c2 stuff
-    cse498::Connection *c2 = new cse498::Connection("127.0.0.1");
+    cse498::Connection *c2 = new cse498::Connection("127.0.0.1", port);
     char *buf = new char[sizeof(uint64_t)];
     while (!mr_registered);
     *((uint64_t *) buf) = 10;

@@ -61,13 +61,12 @@ namespace cse498 {
          * @param address address to use on the network, can be nullptr
          * @param on_listening Right after fi_listen has been called and another connection can request a connection. 
          **/
-        Connection(const char* address, std::function<void()> on_listening) {
+        Connection(const char* address, int port, std::function<void()> on_listening) {
             create_hints();
 
             LOG2<DEBUG>() << "Initializing passive connection";
-            SAFE_CALL(fi_getinfo(FI_VERSION(MAJOR_VERSION_USED, MINOR_VERSION_USED), address, DEFAULT_PORT, FI_SOURCE,
-                                 hints,
-                                 &info)); // TODO I don't beleive FI_SOURCE does anything. Should try to delete.
+            SAFE_CALL(fi_getinfo(FI_VERSION(MAJOR_VERSION_USED, MINOR_VERSION_USED), address, 
+                std::to_string(port).c_str(), FI_SOURCE, hints, &info)); // TODO I don't beleive FI_SOURCE does anything. Should try to delete.
             LOG2<TRACE>() << "Creating fabric";
             SAFE_CALL(fi_fabric(info->fabric_attr, &fab, nullptr));
             LOG2<DEBUG>() << "Using provider: " << info->fabric_attr->prov_name;
@@ -115,18 +114,18 @@ namespace cse498 {
         /**
          * Creates the passive side of a connection (it listens to a connection request from another machine using the other contructor)
          **/
-        Connection() : Connection(nullptr, []() {}) {} // Its funny how many different braces this uses
+        Connection() : Connection(nullptr, 0, []() {}) {} // Its funny how many different braces this uses
 
         /**
          * Creates the active side of a connection.
          * @param addr The address of the machine to connect to (that machine should have the passive side of a connection)
          **/
-        Connection(const char *addr) {
+        Connection(const char *addr, int port) {
             create_hints();
 
             LOG2<DEBUG>() << "Initializing client";
-            SAFE_CALL(fi_getinfo(FI_VERSION(MAJOR_VERSION_USED, MINOR_VERSION_USED), addr, DEFAULT_PORT, 0, hints,
-                                 &info));
+            SAFE_CALL(fi_getinfo(FI_VERSION(MAJOR_VERSION_USED, MINOR_VERSION_USED), addr, 
+                std::to_string(port).c_str(), 0, hints, &info));
             LOG2<DEBUG>() << "Using provider: " << info->fabric_attr->prov_name;
 
             SAFE_CALL(fi_fabric(info->fabric_attr, &fab, nullptr));

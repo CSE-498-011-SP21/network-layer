@@ -10,9 +10,10 @@ int LOG_LEVEL = TRACE;
  * a mix of async and blocking messages to each other. I dub this hamburger consensus. 
  **/
 int main(int argc, char **argv) {
+	int port = 8080;
 	cse498::Connection *conn;
 	if (argc == 2) {
-		conn = new cse498::Connection(argv[1]);
+		conn = new cse498::Connection(argv[1], port);
 
 		char *buf = new char[128];
 		conn->wait_recv(buf, 128);
