@@ -101,9 +101,11 @@ TEST(connectionTest, connection_send_recv_multiple_connections) {
 TEST(connectionTest, connection_broadcast) {
     std::atomic_bool listening = false;
     const std::string msg = "wowww (owen wilson voice\0";
+    
 
     auto f = std::async([&msg, &listening]() {
-        cse498::Connection *c1 = new cse498::Connection([&listening]() {listening = true;});
+        const char* addr = "127.0.0.1";
+        cse498::Connection *c1 = new cse498::Connection(addr, [&listening]() {listening = true;});
 
         std::vector<cse498::Connection> v;
         v.push_back(*c1);
