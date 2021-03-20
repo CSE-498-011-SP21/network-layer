@@ -27,6 +27,16 @@ inline int callCheck(int err, const char *file, int line, bool abort = true) {
     return err;
 }
 
+#define ERRREPORT(x) error_report2((x), __FILE__, __LINE__);
+
+inline bool error_report2(int err, std::string file, int line) {
+    if (err) {
+        LOG2<TRACE>() << "ERROR (" << err << "): " << fi_strerror(-err) << " " << file << ":" << line;
+        return false;
+    }
+    return true;
+}
+
 #define MAJOR_VERSION_USED 1
 #define MINOR_VERSION_USED 9
 
@@ -170,13 +180,14 @@ namespace cse498 {
          * @param data The data to send
          * @param size The size of the data
          **/
-        inline void async_send(const char *data, const size_t size) {
+        inline bool async_send(const char *data, const size_t size) {
             if (size > MAX_MSG_SIZE) {
                 LOG2<ERROR>() << "Too large of a message!";
-                exit(1);
+                return false;
             }
             ++msg_sends;
-            SAFE_CALL(fi_send(ep, data, size, nullptr, 0, nullptr));
+            //SAFE_CALL(fi_send(ep, data, size, nullptr, 0, nullptr));
+            return ERRREPORT(fi_send(ep, data, size, nullptr, 0, nullptr));
         }
 
         /**
@@ -200,6 +211,16 @@ namespace cse498 {
             SAFE_CALL(fi_recv(ep, buf, max_len, nullptr, 0, nullptr));
             LOG2<DEBUG3>() << "Receiving up to " << max_len << " bytes";
             SAFE_CALL(wait_for_completion(rx_cq));
+        }
+
+        /**
+         * Same as above but non blocking.
+         *
+         * @param buf The buffer to store the message data in
+         * @param max_len The maximum length of the message (should be <= MAX_MSG_SIZE)
+         **/
+        inline void try_recv(char *buf, size_t max_len) {
+            // TODO
         }
 
         /**
@@ -248,6 +269,17 @@ namespace cse498 {
             SAFE_CALL(fi_read(ep, buf, size, nullptr, 0, addr, key, nullptr));
             LOG2<DEBUG3>() << "Read " << key << "-" << addr << " sent";
             SAFE_CALL(wait_for_completion(tx_cq));
+        }
+
+        /**
+         * Same as above but non blocking.
+         * @param buf
+         * @param size
+         * @param addr
+         * @param key
+         */
+        inline void try_read(char *buf, size_t size, uint64_t addr, uint64_t key) {
+            // TODO
         }
 
         /*inline void read_local(char *buf, size_t size, uint64_t addr, uint64_t key) {
