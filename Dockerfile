@@ -15,6 +15,8 @@ COPY docker_rsa /root/.ssh/id_rsa
 
 COPY docker_rsa.pub /root/.ssh/id_rsa.pub
 
+RUN chmod 600 /root/.ssh/id_rsa
+
 RUN touch /root/.ssh/known_hosts
 
 RUN ssh-keyscan github.com >> /root/.ssh/known_hosts

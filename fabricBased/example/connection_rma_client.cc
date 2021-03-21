@@ -7,8 +7,8 @@
 int LOG_LEVEL = DEBUG;
 
 int main(){
-
-    cse498::Connection *c2 = new cse498::Connection("127.0.0.1");
+    int port = 8080;
+    cse498::Connection *c2 = new cse498::Connection("127.0.0.1", port);
 
     char *buf = new char[sizeof(uint64_t)];
 

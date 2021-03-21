@@ -28,6 +28,16 @@ inline int callCheck(int err, const char *file, int line, bool abort = true) {
     return err;
 }
 
+#define ERRREPORT2(x) error_report2((x), __FILE__, __LINE__);
+
+inline bool error_report2(int err, std::string file, int line) {
+    if (err) {
+        LOG2<TRACE>() << "ERROR (" << err << "): " << fi_strerror(-err) << " " << file << ":" << line;
+        return false;
+    }
+    return true;
+}
+
 #define MAJOR_VERSION_USED 1
 #define MINOR_VERSION_USED 9
 
@@ -217,6 +227,22 @@ namespace cse498 {
         }
 
         /**
+         * Same as above but nonblocking.
+         *
+         * @param buf The buffer to store the message data in
+         * @param max_len The maximum length of the message (should be <= MAX_MSG_SIZE)
+         **/
+        inline bool try_recv(char *buf, size_t max_len) {
+            LOG2<DEBUG3>() << "Receiving up to " << max_len << " bytes";
+            bool b = ERRREPORT2(fi_recv(ep, buf, max_len, nullptr, 0, nullptr));
+            if (b) {
+                SAFE_CALL(wait_for_completion(rx_cq));
+                return true;
+            }
+            return false;
+        }
+
+        /**
          * Registers a new memory region which only works for this connection. If there is already
          * a memory region registered with the same key then it will close the previous one and register 
          * this one. You can use this to change permissions for a memory region on a specific connection 
@@ -266,6 +292,24 @@ namespace cse498 {
             SAFE_CALL(fi_read(ep, buf, size, nullptr, 0, addr, key, nullptr));
             LOG2<DEBUG3>() << "Read " << key << "-" << addr << " sent";
             SAFE_CALL(wait_for_completion(tx_cq));
+        }
+
+        /**
+         * Same as above but nonblocking
+         * @param buf
+         * @param size
+         * @param addr
+         * @param key
+         */
+        inline bool try_read(char *buf, size_t size, uint64_t addr, uint64_t key) {
+            //SAFE_CALL(fi_read(ep, buf, size, nullptr, 0, addr, key, nullptr));
+            LOG2<DEBUG3>() << "Read " << key << "-" << addr << " sent";
+            bool b = ERRREPORT2(fi_read(ep, buf, size, nullptr, 0, addr, key, nullptr));
+            if (b) {
+                SAFE_CALL(wait_for_completion(tx_cq));
+                return true;
+            }
+            return false;
         }
 
         /*inline void read_local(char *buf, size_t size, uint64_t addr, uint64_t key) {
@@ -402,4 +446,63 @@ namespace cse498 {
             SAFE_CALL(fi_enable(ep));
         }
     };
+
+        /**
+     * Performs best effort broadcast
+     * @param clients clients to send to
+     * @param message message to send
+     * @param messageSize size of message
+     */
+    inline void bestEffortBroadcast(std::vector<Connection> &connections, const char *message, size_t messageSize) {
+        for (auto &c : connections) {
+            c.wait_send(message, messageSize);
+        }
+    }
+
+    /**
+     * Performs best effort broadcast recieve from client
+     * @param clients clients to recv from
+     * @param buf buffer
+     * @param sizeOfBuf buffer size
+     */
+    inline void bestEffortBroadcastReceiveFrom(Connection &connections, char *buf, size_t sizeOfBuf) {
+        connections.wait_recv(buf, sizeOfBuf);
+    }
+
+    /**
+     * Reliably broadcast from a server
+     * @param clients clients to send to
+     * @param message message to send
+     * @param messageSize size of message
+     */
+    inline void reliableBroadcast(std::vector<Connection> &connections, const char *message, size_t messageSize) {
+        bestEffortBroadcast(connections, message, messageSize);
+    }
+
+    /**
+     * Receive from
+     * @param receiveFrom node to receive from
+     * @param clients clients to send to
+     * @param buf buffer to use (registered)
+     * @param bufSize size of buffer to use
+     * @param checkIfReceivedBefore function to check if the message has been received before
+     * @param markAsReceived function to mark a message as received
+     * @return true if it has not been received before
+     */
+    inline bool
+    reliableBroadcastReceiveFrom(Connection &receiveFrom, std::vector<Connection> &connections,
+                                 char *buf,
+                                 size_t bufSize, const std::function<bool(char *, size_t)> &checkIfReceivedBefore,
+                                 const std::function<void(char *, size_t)> &markAsReceived) {
+
+        receiveFrom.wait_recv(buf, bufSize);
+
+        if (!checkIfReceivedBefore(buf, bufSize)) {
+            bestEffortBroadcast(connections, buf, bufSize);
+            markAsReceived(buf, bufSize);
+            return true;
+        }
+        return false;
+       
+    }
 };
