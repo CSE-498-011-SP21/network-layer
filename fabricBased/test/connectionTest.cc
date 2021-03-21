@@ -108,20 +108,18 @@ TEST(connectionTest, connection_broadcast) {
     std::atomic_bool listening = false;
     const std::string msg = "wowww (owen wilson voice\0";
     
-
-    auto f = std::async([&msg, &port, &listening]() {
+    auto f = std::async([&msg, &listening]() {
         const char* addr = "127.0.0.1";
-        cse498::Connection *c1 = new cse498::Connection(addr, true);
+        cse498::Connection *c1 = new cse498::Connection(addr, false);
 
         std::vector<cse498::Connection> v;
         v.push_back(*c1);
 
         rbc(v, msg.c_str(), 4096);
+
     });
 
-    while (!listening);
-
-    cse498::Connection *c2 = new cse498::Connection("127.0.0.1", false);
+    cse498::Connection *c2 = new cse498::Connection("127.0.0.1", true);
 
     char *buf2 = new char[4096];
     std::vector<cse498::Connection> v;
@@ -131,6 +129,7 @@ TEST(connectionTest, connection_broadcast) {
     ASSERT_FALSE(res);
     ASSERT_STREQ(msg.c_str(), buf2);
 
+    f.get();
 }
 
 TEST(connectionTest, connection_rma) {
