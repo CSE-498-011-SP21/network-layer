@@ -28,6 +28,26 @@ TEST(connectionTest, connection_async_send_recv) {
     delete c2;
 }
 
+TEST(connectionTest, connection_try_recv) {
+    const std::string msg = "try_potato\0";
+
+    auto f = std::async([&msg]() {
+        // c1 stuff
+        cse498::Connection *c1 = new cse498::Connection("127.0.0.1", false);
+        c1->async_send(msg.c_str(), msg.length() + 1);
+        c1->wait_for_sends();
+        delete c1;
+    });
+
+    cse498::Connection *c2 = new cse498::Connection("127.0.0.1", true);
+
+    char *buf = new char[128];
+    while (!c2->try_recv(buf, 128));
+    ASSERT_STREQ(msg.c_str(), buf);
+    f.get();
+    delete c2;
+}
+
 TEST(connectionTest, connection_wait_send_recv_response) {
     const std::string msg = "potato\0";
     const std::string msg_res = "potato\0";
@@ -105,10 +125,10 @@ TEST(connectionTest, connection_send_recv_multiple_connections) {
 }
 
 TEST(connectionTest, connection_broadcast) {
-    std::atomic_bool listening = false;
-    const std::string msg = "wowww (owen wilson voice\0";
+    const std::string msg = "wowww (owen wilson voice)\0";
+    const std::string resp = "you're weird\0";
     
-    auto f = std::async([&msg, &listening]() {
+    auto f = std::async([&msg, &resp]() {
         const char* addr = "127.0.0.1";
         cse498::Connection *c1 = new cse498::Connection(addr, false);
 
@@ -117,6 +137,11 @@ TEST(connectionTest, connection_broadcast) {
 
         rbc(v, msg.c_str(), 4096);
 
+        char *buf = new char[4096];
+        c1->wait_recv(buf, 4096);
+        ASSERT_STREQ(resp.c_str(), buf);
+
+        //delete c1;
     });
 
     cse498::Connection *c2 = new cse498::Connection("127.0.0.1", true);
@@ -129,7 +154,9 @@ TEST(connectionTest, connection_broadcast) {
     ASSERT_FALSE(res);
     ASSERT_STREQ(msg.c_str(), buf2);
 
+    c2->wait_send(resp.c_str(), resp.length() + 1);
     f.get();
+    //delete c2;
 }
 
 TEST(connectionTest, connection_rma) {
@@ -173,6 +200,47 @@ TEST(connectionTest, connection_rma) {
     done = true;
 
 
+    f.get();
+
+    delete c2;
+}
+
+TEST(connectionTest, connection_rma_try_read) {
+    std::atomic_bool done;
+    done = false;
+
+    std::atomic_bool latch;
+    latch = false;
+    volatile char *remoteAccess = new char[sizeof(uint64_t)];
+
+    auto f = std::async([&done, &latch, &remoteAccess]() {
+        // c1 stuff
+        const char* addr = "127.0.0.1";
+        cse498::Connection *c1 = new cse498::Connection(addr, true);
+
+        *((uint64_t *) remoteAccess) = ~0;
+        c1->register_mr((char *) remoteAccess, sizeof(uint64_t), FI_WRITE | FI_REMOTE_WRITE | FI_READ | FI_REMOTE_READ,
+                        1);
+
+        latch = true;
+        while (!done);
+
+        ASSERT_TRUE(*((uint64_t *) remoteAccess) == 0);
+        delete c1;
+    });
+
+    cse498::Connection *c2 = new cse498::Connection("127.0.0.1", false);
+    char *buf = new char[sizeof(uint64_t)];
+    *((uint64_t *) buf) = 10;
+    while (!latch);
+    while (!c2->try_read(buf, sizeof(uint64_t), 0, 1));
+    //c2->wait_read(buf, sizeof(uint64_t), 0, 1);
+    std::cerr << "Read: " << *(uint64_t *) buf << std::endl;
+    ASSERT_TRUE(*((uint64_t *) buf) == ~0);
+
+    *((uint64_t *) buf) = 0;
+    c2->wait_write(buf, sizeof(uint64_t), 0, 1);
+    done = true;
     f.get();
 
     delete c2;
