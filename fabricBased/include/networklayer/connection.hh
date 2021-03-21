@@ -45,91 +45,104 @@ namespace cse498 {
     class Connection {
     public:
         /**
-         * Creates the passive side of a connection (it listens to a connection request from another machine using the other contructor)
+         * Creates one side of the connection (either client or server). Blocks until a connection is established. 
+         * The address can be null if this is the server side and it is not connecting to 127.0.0.1 
          * 
-         * This constructor is only intended for tests.
-         * @param address address to use on the network, can be nullptr
-         * @param on_listening Right after fi_listen has been called and another connection can request a connection. 
+         * If you are creating the server side of a connection connecting to 127.0.0.1 then you have to use this constructor. 
+         * 
+         * @param address address to use on the network, can be nullptr if the address is not 127.0.0.1 and it is the server
+         * @param is_server Whether this machine is the server (doesn't matter which one in a connection is the server as long as one is)
+         * @param port Port to connection on. Defaults to 8080
          **/
-        Connection(const char* address, std::function<void()> on_listening) {
+        Connection(const char *addr, bool is_server, const int port = 8080) {
             create_hints();
 
-            LOG2<DEBUG>() << "Initializing passive connection";
-            SAFE_CALL(fi_getinfo(FI_VERSION(MAJOR_VERSION_USED, MINOR_VERSION_USED), address, DEFAULT_PORT, FI_SOURCE,
-                                 hints,
-                                 &info)); // TODO I don't beleive FI_SOURCE does anything. Should try to delete.
-            LOG2<TRACE>() << "Creating fabric";
-            SAFE_CALL(fi_fabric(info->fabric_attr, &fab, nullptr));
-            LOG2<DEBUG>() << "Using provider: " << info->fabric_attr->prov_name;
+            if (is_server) {
+                LOG2<DEBUG>() << "Initializing passive connection";
+                std::string *server_addr = nullptr; // For localhost you have to define the address, but if its not localhost it will crash if the address is defined. libfabric is weird.
+                if (addr != nullptr && strcmp(addr, "127.0.0.1") == 0) { // Lazy execution is neat
+                    server_addr = new std::string("127.0.0.1");
+                }
+                SAFE_CALL(fi_getinfo(FI_VERSION(MAJOR_VERSION_USED, MINOR_VERSION_USED), server_addr == nullptr ? nullptr : server_addr->c_str(), std::to_string(port).c_str(), FI_SOURCE,
+                                    hints, &info));
+                LOG2<TRACE>() << "Creating fabric";
+                SAFE_CALL(fi_fabric(info->fabric_attr, &fab, nullptr));
+                LOG2<DEBUG>() << "Using provider: " << info->fabric_attr->prov_name;
 
-            open_eq();
+                open_eq();
 
-            fid_pep *pep;
-            LOG2<TRACE>() << "Creating passive endpoint";
-            SAFE_CALL(fi_passive_ep(fab, info, &pep, nullptr));
+                fid_pep *pep;
+                LOG2<TRACE>() << "Creating passive endpoint";
+                SAFE_CALL(fi_passive_ep(fab, info, &pep, nullptr));
 
-            LOG2<TRACE>() << "Binding eq to pep";
-            SAFE_CALL(fi_pep_bind(pep, &eq->fid, 0));
-            LOG2<TRACE>() << "Transitioning pep to listening state";
-            SAFE_CALL(fi_listen(pep));
+                LOG2<TRACE>() << "Binding eq to pep";
+                SAFE_CALL(fi_pep_bind(pep, &eq->fid, 0));
+                LOG2<TRACE>() << "Transitioning pep to listening state";
+                SAFE_CALL(fi_listen(pep));
 
-            on_listening();
 
-            uint32_t event;
-            struct fi_eq_cm_entry entry = {};
-            LOG2<TRACE>() << "Waiting for connection request";
-            int rd = SAFE_CALL(fi_eq_sread(eq, &event, &entry, sizeof(entry), -1, 0));
-            // May want to check that the address is correct.
-            if (rd != sizeof(entry)) {
-                LOG2<ERROR>() << "There was an error reading the connection request.";
-                exit(1);
+                uint32_t event;
+                struct fi_eq_cm_entry entry = {};
+                LOG2<TRACE>() << "Waiting for connection request";
+                int rd = SAFE_CALL(fi_eq_sread(eq, &event, &entry, sizeof(entry), -1, 0));
+                // May want to check that the address is correct.
+                if (rd != sizeof(entry)) {
+                    LOG2<ERROR>() << "There was an error reading the connection request.";
+                    exit(1);
+                }
+
+                if (event != FI_CONNREQ) {
+                    LOG2<ERROR>() << "Incorrect event type";
+                    exit(1);
+                }
+                fi_close(&pep->fid);
+                fi_freeinfo(info);
+                info = entry.info;
+                LOG2<TRACE>() << "Connection request received";
+
+                setup_active_ep();
+
+                LOG2<TRACE>() << "Accepting connection request";
+                SAFE_CALL(fi_accept(ep, nullptr, 0));
+
+                wait_for_eq_connected();
+            } else {
+                LOG2<DEBUG>() << "Initializing client";
+                SAFE_CALL(fi_getinfo(FI_VERSION(MAJOR_VERSION_USED, MINOR_VERSION_USED), addr, std::to_string(port).c_str(), 0, hints,
+                                    &info));
+                LOG2<DEBUG>() << "Using provider: " << info->fabric_attr->prov_name;
+
+                SAFE_CALL(fi_fabric(info->fabric_attr, &fab, nullptr));
+
+                open_eq();
+
+                setup_active_ep();
+
+                LOG2<TRACE>() << "Sending connection request";
+                while (fi_connect(ep, info->dest_addr, nullptr, 0) < 0);
+                LOG2<TRACE>() << "Connection request sent";
+
+                wait_for_eq_connected();
             }
-
-            if (event != FI_CONNREQ) {
-                LOG2<ERROR>() << "Incorrect event type";
-                exit(1);
-            }
-            fi_close(&pep->fid);
-            fi_freeinfo(info);
-            info = entry.info;
-            LOG2<TRACE>() << "Connection request received";
-
-            setup_active_ep();
-
-            LOG2<TRACE>() << "Accepting connection request";
-            SAFE_CALL(fi_accept(ep, nullptr, 0));
-
-            wait_for_eq_connected();
         }
 
         /**
-         * Creates the passive side of a connection (it listens to a connection request from another machine using the other contructor)
+         * Creates a server side of the connection. Blocks until completion. 
+         * Cannot be used for local connections (there is another constructor for that)
+         * 
+         * @param port the port to connect on. Defaults to 8080
          **/
-        Connection() : Connection(nullptr, []() {}) {} // Its funny how many different braces this uses
+        Connection(const int port=8080) : Connection(nullptr, true, port) {}
 
         /**
-         * Creates the active side of a connection.
-         * @param addr The address of the machine to connect to (that machine should have the passive side of a connection)
+         * Creates the client side of the connection, blocking until completion. If there is no
+         * server active while the constructor is called it will continue to try to connect until
+         * the server is found.
+         * 
+         * @param addr the address of the server
+         * @param port the port to connect on (default 8080)
          **/
-        Connection(const char *addr) {
-            create_hints();
-
-            LOG2<DEBUG>() << "Initializing client";
-            SAFE_CALL(fi_getinfo(FI_VERSION(MAJOR_VERSION_USED, MINOR_VERSION_USED), addr, DEFAULT_PORT, 0, hints,
-                                 &info));
-            LOG2<DEBUG>() << "Using provider: " << info->fabric_attr->prov_name;
-
-            SAFE_CALL(fi_fabric(info->fabric_attr, &fab, nullptr));
-
-            open_eq();
-
-            setup_active_ep();
-
-            LOG2<TRACE>() << "Sending connection request";
-            while (fi_connect(ep, info->dest_addr, nullptr, 0) < 0);
-
-            wait_for_eq_connected();
-        }
+        Connection(const char * addr, const int port=8080) : Connection(addr, false, port) {}
 
         ~Connection() {
             LOG2<TRACE>() << "Closing all the fabric objects";
@@ -262,7 +275,6 @@ namespace cse498 {
         }*/
 
     private:
-        const char *DEFAULT_PORT = "8080";
         const size_t MAX_MSG_SIZE = 4096;
         uint64_t msg_sends = 0;
 
