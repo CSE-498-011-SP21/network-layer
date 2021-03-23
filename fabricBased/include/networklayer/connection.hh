@@ -204,6 +204,34 @@ namespace cse498 {
         }
 
         /**
+         * This adds a message to the queue to be sent. It does not block. You cannot
+         * touch the data buffer until after wait_for_sends or wait_send is called,
+         * otherwise it may send the modified data buffer which is very bad (you should
+         * call one of those also before the program completes otherwise messages from
+         * async_send may not have been sent).
+         *
+         * @param data The data to send
+         * @param size The size of the data
+         **/
+        inline bool try_send(const char *data, const size_t size) {
+            if (size > MAX_MSG_SIZE) {
+                LOG2<ERROR>() << "Too large of a message!";
+                exit(1);
+            }
+
+            ++msg_sends;
+            bool b = ERRREPORT2(fi_send(ep, data, size, nullptr, 0, nullptr));
+            if (b) {
+                wait_for_sends();
+                LOG2<TRACE>() << "Message sent";
+                return true;
+            }
+            LOG2<TRACE>() << "Message send failed";
+            return false;
+        }
+
+
+        /**
          * Ensures all the previous sends were completed. This means after calling this
          * you can modify the data buffer from async_send.
          **/
@@ -279,6 +307,24 @@ namespace cse498 {
             SAFE_CALL(fi_write(ep, buf, size, nullptr, 0, addr, key, nullptr));
             LOG2<DEBUG3>() << "Write " << key << "-" << addr << " sent";
             SAFE_CALL(wait_for_completion(tx_cq));
+        }
+
+        /**
+         * Write from buf with given size to the addr with the given key
+         * Note addresses start at 0
+         * @param buf
+         * @param size
+         * @param addr
+         * @param key
+         */
+        inline bool try_write(const char *buf, size_t size, uint64_t addr, uint64_t key) {
+            bool b = ERRREPORT2(fi_write(ep, buf, size, nullptr, 0, addr, key, nullptr));
+            LOG2<DEBUG3>() << "Write " << key << "-" << addr << " sent";
+            if (b) {
+                SAFE_CALL(wait_for_completion(tx_cq));
+                return true;
+            }
+            return false;
         }
 
         /**
