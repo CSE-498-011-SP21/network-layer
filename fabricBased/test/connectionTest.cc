@@ -34,8 +34,9 @@ TEST(connectionTest, connection_try_recv) {
     auto f = std::async([&msg]() {
         // c1 stuff
         cse498::Connection *c1 = new cse498::Connection("127.0.0.1", false);
-        c1->async_send(msg.c_str(), msg.length() + 1);
-        c1->wait_for_sends();
+        while(!c1->try_send(msg.c_str(), msg.length() + 1))
+        //c1->async_send(msg.c_str(), msg.length() + 1);
+        //c1->wait_for_sends();
         delete c1;
     });
 
@@ -54,7 +55,7 @@ TEST(connectionTest, connection_wait_send_recv_response) {
 
     auto f = std::async([&msg, &msg_res]() {
         // c1 stuff
-        const char* addr = "127.0.0.1";
+        const char *addr = "127.0.0.1";
 
         cse498::Connection *c1 = new cse498::Connection(addr, true);
         c1->wait_send(msg.c_str(), msg.length() + 1);
@@ -85,7 +86,7 @@ TEST(connectionTest, connection_send_recv_multiple_connections) {
 
     auto f = std::async([&c0_to_c1_msg, &c0_to_c2_msg]() {
         // c0 stuff
-        const char* addr = "127.0.0.1";
+        const char *addr = "127.0.0.1";
 
         // c1's connection to c0
         cse498::Connection *c0_c1 = new cse498::Connection(addr, true);
@@ -127,21 +128,19 @@ TEST(connectionTest, connection_send_recv_multiple_connections) {
 TEST(connectionTest, connection_broadcast) {
     const std::string msg = "wowww (owen wilson voice)\0";
     const std::string resp = "you're weird\0";
-    
+
     auto f = std::async([&msg, &resp]() {
-        const char* addr = "127.0.0.1";
-        cse498::Connection *c1 = new cse498::Connection(addr, false);
+        const char *addr = "127.0.0.1";
+        cse498::Connection c1 = cse498::Connection(addr, false);
 
         std::vector<cse498::Connection> v;
-        v.push_back(*c1);
+        v.push_back(std::move(c1));
 
         rbc(v, msg.c_str(), 4096);
 
         char *buf = new char[4096];
-        c1->wait_recv(buf, 4096);
+        v[0].wait_recv(buf, 4096);
         ASSERT_STREQ(resp.c_str(), buf);
-
-        //delete c1;
     });
 
     cse498::Connection *c2 = new cse498::Connection("127.0.0.1", true);
@@ -150,13 +149,13 @@ TEST(connectionTest, connection_broadcast) {
     std::vector<cse498::Connection> v;
     // Should be false since hasnt recieved before
     bool res = cse498::reliableBroadcastReceiveFrom(*c2, v, buf2, 4096, [](char *c, size_t s) { return true; },
-                                         [](char *c, size_t s) {});
+                                                    [](char *c, size_t s) {});
     ASSERT_FALSE(res);
     ASSERT_STREQ(msg.c_str(), buf2);
 
     c2->wait_send(resp.c_str(), resp.length() + 1);
     f.get();
-    //delete c2;
+    delete c2;
 }
 
 TEST(connectionTest, connection_rma) {
@@ -169,7 +168,7 @@ TEST(connectionTest, connection_rma) {
 
     auto f = std::async([&done, &latch, &remoteAccess]() {
         // c1 stuff
-        const char* addr = "127.0.0.1";
+        const char *addr = "127.0.0.1";
         cse498::Connection *c1 = new cse498::Connection(addr, true);
 
         *((uint64_t *) remoteAccess) = ~0;
@@ -215,7 +214,7 @@ TEST(connectionTest, connection_rma_try_read) {
 
     auto f = std::async([&done, &latch, &remoteAccess]() {
         // c1 stuff
-        const char* addr = "127.0.0.1";
+        const char *addr = "127.0.0.1";
         cse498::Connection *c1 = new cse498::Connection(addr, true);
 
         *((uint64_t *) remoteAccess) = ~0;
@@ -239,6 +238,7 @@ TEST(connectionTest, connection_rma_try_read) {
     ASSERT_TRUE(*((uint64_t *) buf) == ~0);
 
     *((uint64_t *) buf) = 0;
+    while(!c2->try_write(buf, sizeof(uint64_t), 0, 1))
     c2->wait_write(buf, sizeof(uint64_t), 0, 1);
     done = true;
     f.get();
@@ -266,7 +266,7 @@ TEST(connectionTest, connection_changing_rma_perms) {
 
     auto f = std::async([&mr_registered, &mr1_wrote, &mr2_wrote, &perms_updated, &c2_done, &c0_done]() {
         // c0 stuff
-        const char* addr = "127.0.0.1";
+        const char *addr = "127.0.0.1";
 
         volatile char *remoteAccess = new char[sizeof(uint64_t)];
         *((uint64_t *) remoteAccess) = ~0;
@@ -277,10 +277,14 @@ TEST(connectionTest, connection_changing_rma_perms) {
         cse498::Connection *c0_c1 = new cse498::Connection(addr, true);
         // c2's connection to c0
         cse498::Connection *c0_c2 = new cse498::Connection(addr, true);
-        ASSERT_EQ(false, c0_c1->register_mr((char *) remoteAccess, sizeof(uint64_t), FI_WRITE | FI_REMOTE_WRITE | FI_READ | FI_REMOTE_READ, 1));
-        ASSERT_EQ(false, c0_c2->register_mr((char *) remoteAccess, sizeof(uint64_t), FI_WRITE | FI_REMOTE_WRITE | FI_READ | FI_REMOTE_READ, 1));
-        ASSERT_EQ(false, c0_c1->register_mr((char *) remoteAccess2, sizeof(uint64_t), FI_WRITE | FI_REMOTE_WRITE | FI_READ | FI_REMOTE_READ, 2));
-        ASSERT_EQ(false, c0_c2->register_mr((char *) remoteAccess2, sizeof(uint64_t), FI_WRITE | FI_REMOTE_WRITE | FI_READ | FI_REMOTE_READ, 2));
+        ASSERT_EQ(false, c0_c1->register_mr((char *) remoteAccess, sizeof(uint64_t),
+                                            FI_WRITE | FI_REMOTE_WRITE | FI_READ | FI_REMOTE_READ, 1));
+        ASSERT_EQ(false, c0_c2->register_mr((char *) remoteAccess, sizeof(uint64_t),
+                                            FI_WRITE | FI_REMOTE_WRITE | FI_READ | FI_REMOTE_READ, 1));
+        ASSERT_EQ(false, c0_c1->register_mr((char *) remoteAccess2, sizeof(uint64_t),
+                                            FI_WRITE | FI_REMOTE_WRITE | FI_READ | FI_REMOTE_READ, 2));
+        ASSERT_EQ(false, c0_c2->register_mr((char *) remoteAccess2, sizeof(uint64_t),
+                                            FI_WRITE | FI_REMOTE_WRITE | FI_READ | FI_REMOTE_READ, 2));
         mr_registered = true;
 
         while (!mr1_wrote || !mr2_wrote);
@@ -341,12 +345,12 @@ TEST(connectionTest, connection_changing_rma_perms) {
     c2->wait_write(buf, sizeof(uint64_t), 0, 1); // Make sure it can still write on 1. 
 
     *((uint64_t *) buf) = 100000;
-    
+
     // TODO this next line currently causes the program to exit which makes the test fail. (even though exiting means it passed)
     // Once we update wait_write to return on failure instead of exit we need to re-add this line (with the proper assertion)
     // (I've tried to use ASSERT_EXIT with this but it seems to hang indefinitely, likely since it calls fork which I doubt works well with networking)
     // c2->wait_write(buf, sizeof(uint64_t), 0, 2); // Make sure it can't write on 2
-    
+
     c2_done = true;
 
     f.get();
