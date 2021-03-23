@@ -7,11 +7,15 @@
 
 int LOG_LEVEL = DEBUG;
 
-int main() {
+int main(int argc, char** argv) {
 
     volatile char *remoteAccess = new char[sizeof(uint64_t)];
 
     const char* addr = "127.0.0.1";
+
+    if(argc > 1){
+        addr = argv[1];
+    }
 
     cse498::Connection *c1 = new cse498::Connection(addr, true);
 

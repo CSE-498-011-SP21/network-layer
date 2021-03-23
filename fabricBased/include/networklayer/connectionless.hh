@@ -32,7 +32,7 @@ inline void error_check_2(int err, std::string file, int line) {
 
 inline bool error_report(int err, std::string file, int line) {
     if (err) {
-        LOG2<TRACE>() << "ERROR (" << err << "): " << fi_strerror(-err) << " " << file << ":" << line;
+        //LOG2<TRACE>() << "ERROR (" << err << "): " << fi_strerror(-err) << " " << file << ":" << line;
         return false;
     }
     return true;

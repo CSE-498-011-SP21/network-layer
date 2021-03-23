@@ -6,9 +6,15 @@
 
 int LOG_LEVEL = DEBUG;
 
-int main(){
+int main(int argc, char** argv){
+    
+    std::string addr = "127.0.0.1";
+
+    if(argc > 1){
+        addr = argv[1];
+    }
     int port = 8080;
-    cse498::Connection *c2 = new cse498::Connection("127.0.0.1", port);
+    cse498::Connection *c2 = new cse498::Connection(addr.c_str(), port);
 
     char *buf = new char[sizeof(uint64_t)];
 

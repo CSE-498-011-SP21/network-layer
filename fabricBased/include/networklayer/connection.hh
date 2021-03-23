@@ -69,12 +69,12 @@ namespace cse498 {
 
             if (is_server) {
                 LOG2<DEBUG>() << "Initializing passive connection";
-                std::string *server_addr = nullptr; // For localhost you have to define the address, but if its not localhost it will crash if the address is defined. libfabric is weird.
-                if (addr != nullptr && strcmp(addr, "127.0.0.1") == 0) { // Lazy execution is neat
-                    server_addr = new std::string("127.0.0.1");
-                }
+                //std::string *server_addr = nullptr; // For localhost you have to define the address, but if its not localhost it will crash if the address is defined. libfabric is weird.
+                //if (addr != nullptr && strcmp(addr, "127.0.0.1") == 0) { // Lazy execution is neat
+                //    server_addr = new std::string("127.0.0.1");
+                //}
                 SAFE_CALL(fi_getinfo(FI_VERSION(MAJOR_VERSION_USED, MINOR_VERSION_USED),
-                                     server_addr == nullptr ? nullptr : server_addr->c_str(),
+                                     addr,
                                      std::to_string(port).c_str(), FI_SOURCE,
                                      hints, &info));
                 LOG2<TRACE>() << "Creating fabric";
