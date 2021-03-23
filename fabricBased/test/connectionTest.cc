@@ -34,8 +34,9 @@ TEST(connectionTest, connection_try_recv) {
     auto f = std::async([&msg]() {
         // c1 stuff
         cse498::Connection *c1 = new cse498::Connection("127.0.0.1", false);
-        c1->async_send(msg.c_str(), msg.length() + 1);
-        c1->wait_for_sends();
+        while(!c1->try_send(msg.c_str(), msg.length() + 1))
+        //c1->async_send(msg.c_str(), msg.length() + 1);
+        //c1->wait_for_sends();
         delete c1;
     });
 
@@ -237,6 +238,7 @@ TEST(connectionTest, connection_rma_try_read) {
     ASSERT_TRUE(*((uint64_t *) buf) == ~0);
 
     *((uint64_t *) buf) = 0;
+    while(!c2->try_write(buf, sizeof(uint64_t), 0, 1))
     c2->wait_write(buf, sizeof(uint64_t), 0, 1);
     done = true;
     f.get();
