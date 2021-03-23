@@ -73,8 +73,10 @@ namespace cse498 {
                 if (addr != nullptr && strcmp(addr, "127.0.0.1") == 0) { // Lazy execution is neat
                     server_addr = new std::string("127.0.0.1");
                 }
-                SAFE_CALL(fi_getinfo(FI_VERSION(MAJOR_VERSION_USED, MINOR_VERSION_USED), server_addr == nullptr ? nullptr : server_addr->c_str(), std::to_string(port).c_str(), FI_SOURCE,
-                                    hints, &info));
+                SAFE_CALL(fi_getinfo(FI_VERSION(MAJOR_VERSION_USED, MINOR_VERSION_USED),
+                                     server_addr == nullptr ? nullptr : server_addr->c_str(),
+                                     std::to_string(port).c_str(), FI_SOURCE,
+                                     hints, &info));
                 LOG2<TRACE>() << "Creating fabric";
                 SAFE_CALL(fi_fabric(info->fabric_attr, &fab, nullptr));
                 LOG2<DEBUG>() << "Using provider: " << info->fabric_attr->prov_name;
@@ -106,7 +108,6 @@ namespace cse498 {
                     exit(1);
                 }
                 fi_close(&pep->fid);
-                fi_freeinfo(info);
                 info = entry.info;
                 LOG2<TRACE>() << "Connection request received";
 
@@ -118,8 +119,9 @@ namespace cse498 {
                 wait_for_eq_connected();
             } else {
                 LOG2<DEBUG>() << "Initializing client";
-                SAFE_CALL(fi_getinfo(FI_VERSION(MAJOR_VERSION_USED, MINOR_VERSION_USED), addr, std::to_string(port).c_str(), 0, hints,
-                                    &info));
+                SAFE_CALL(fi_getinfo(FI_VERSION(MAJOR_VERSION_USED, MINOR_VERSION_USED), addr,
+                                     std::to_string(port).c_str(), 0, hints,
+                                     &info));
                 LOG2<DEBUG>() << "Using provider: " << info->fabric_attr->prov_name;
 
                 SAFE_CALL(fi_fabric(info->fabric_attr, &fab, nullptr));
@@ -142,7 +144,7 @@ namespace cse498 {
          * 
          * @param port the port to connect on. Defaults to 8080
          **/
-        Connection(const int port=8080) : Connection(nullptr, true, port) {}
+        Connection(const int port = 8080) : Connection(nullptr, true, port) {}
 
         /**
          * Creates the client side of the connection, blocking until completion. If there is no
@@ -152,20 +154,50 @@ namespace cse498 {
          * @param addr the address of the server
          * @param port the port to connect on (default 8080)
          **/
-        Connection(const char * addr, const int port=8080) : Connection(addr, false, port) {}
+        Connection(const char *addr, const int port = 8080) : Connection(addr, false, port) {}
+
+        Connection(const Connection &) = delete;
+
+        Connection(Connection &&other) {
+            msg_sends = other.msg_sends;
+
+            // These need to be closed by fabric
+            hints = other.hints;
+            other.hints = nullptr;
+            info = other.info;
+            other.info = nullptr;
+            fab = other.fab;
+            other.fab = nullptr;
+
+            domain = other.domain;
+            other.domain = nullptr;
+            eq = other.eq;
+            other.eq = nullptr;
+            ep = other.ep;
+            other.ep = nullptr;
+            rx_cq = other.rx_cq;
+            other.rx_cq = nullptr;
+            tx_cq = other.tx_cq;
+            other.tx_cq = nullptr;
+            mrs = other.mrs;
+            other.mrs = nullptr;
+
+        }
 
         ~Connection() {
             LOG2<TRACE>() << "Closing all the fabric objects";
             fi_freeinfo(hints);
             fi_freeinfo(info);
-            fi_close(&fab->fid);
-            fi_close(&domain->fid);
-            fi_close(&eq->fid);
-            fi_close(&ep->fid);
-            fi_close(&rx_cq->fid);
-            fi_close(&tx_cq->fid);
-            for (auto it = mrs->begin(); it != mrs->end(); ++it) {
-                fi_close(&it->second->fid);
+            if (fab) {
+                fi_close(&fab->fid);
+                fi_close(&domain->fid);
+                fi_close(&eq->fid);
+                fi_close(&ep->fid);
+                fi_close(&rx_cq->fid);
+                fi_close(&tx_cq->fid);
+                for (auto it = mrs->begin(); it != mrs->end(); ++it) {
+                    fi_close(&it->second->fid);
+                }
             }
         }
 
@@ -329,7 +361,7 @@ namespace cse498 {
         fid_eq *eq;
         fid_ep *ep;
         fid_cq *rx_cq, *tx_cq;
-        std::map<uint64_t, fid_mr*> *mrs = new std::map<uint64_t, fid_mr*>();
+        std::map<uint64_t, fid_mr *> *mrs = new std::map<uint64_t, fid_mr *>();
 
         // Based on connectionless.hh, but not identical. This returns the value from fi_cq_read. 
         inline int wait_for_completion(struct fid_cq *cq) {
@@ -355,7 +387,7 @@ namespace cse498 {
             }
         }
 
-        inline fid_mr* create_mr(char *buf, size_t size, uint64_t access, uint64_t key) {
+        inline fid_mr *create_mr(char *buf, size_t size, uint64_t access, uint64_t key) {
             fid_mr *mr;
             LOG2<TRACE>() << "Registering memory region";
             SAFE_CALL(fi_mr_reg(domain, buf, size, access, 0, key, 0, &mr, nullptr));
@@ -447,12 +479,12 @@ namespace cse498 {
         }
     };
 
-        /**
-     * Performs best effort broadcast
-     * @param clients clients to send to
-     * @param message message to send
-     * @param messageSize size of message
-     */
+    /**
+ * Performs best effort broadcast
+ * @param clients clients to send to
+ * @param message message to send
+ * @param messageSize size of message
+ */
     inline void bestEffortBroadcast(std::vector<Connection> &connections, const char *message, size_t messageSize) {
         for (auto &c : connections) {
             c.wait_send(message, messageSize);
@@ -503,6 +535,6 @@ namespace cse498 {
             return true;
         }
         return false;
-       
+
     }
 };

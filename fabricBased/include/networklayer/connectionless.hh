@@ -542,7 +542,7 @@ namespace cse498 {
          * @param buf
          * @param size
          */
-        inline void wait_connect(char *buf, size_t size){
+        inline void wait_connect(char *buf, size_t size) {
             ERRCHK(wait_for_completion(tx_cq));
         }
 
