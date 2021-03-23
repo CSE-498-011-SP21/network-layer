@@ -404,8 +404,8 @@ namespace cse498 {
             hints = fi_allocinfo();
             hints->caps = FI_MSG | FI_RMA | FI_ATOMIC;
             hints->ep_attr->type = FI_EP_MSG;
-            //hints->ep_attr->protocol = FI_PROTO_SOCK_TCP;
-            hints->domain_attr->mr_mode = FI_MR_SCALABLE;
+            hints->ep_attr->protocol = FI_PROTO_RDMA_CM_IB_RC;
+            hints->domain_attr->mr_mode = FI_MR_LOCAL | FI_MR_ALLOCATED | FI_MR_PROV_KEY | FI_MR_VIRT_ADDR; //| FI_MR_VIRT_ADDR | FI_MR_ALLOCATED | FI_MR_PROV_KEY;
         }
 
         /**
@@ -449,7 +449,13 @@ namespace cse498 {
             struct fi_eq_cm_entry entry;
             uint32_t event;
             LOG2<TRACE>() << "Reading eq for FI_CONNECTED event";
-            int addr_len = SAFE_CALL(fi_eq_sread(eq, &event, &entry, sizeof(entry), -1, 0));
+            int addr_len = fi_eq_sread(eq, &event, &entry, sizeof(entry), -1, 0);
+            if(addr_len < 1){
+                struct fi_eq_err_entry err_entry;
+                fi_eq_readerr(eq, &err_entry, 0);
+                LOG2<ERROR>() << fi_eq_strerror(eq, err_entry.prov_errno, err_entry.err_data, nullptr, 0);
+            }
+            SAFE_CALL(addr_len);
             if (event != FI_CONNECTED) {
                 LOG2<ERROR>() << "Not a connected event";
                 exit(1);
