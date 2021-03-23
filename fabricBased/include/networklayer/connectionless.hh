@@ -144,8 +144,8 @@ namespace cse498 {
             ERRCHK(fi_close(&tx_cq->fid));
             ERRCHK(fi_close(&rx_cq->fid));
             ERRCHK(fi_close(&av->fid));
-            ERRCHK(fi_close(&fabric->fid));
             ERRCHK(fi_close(&domain->fid));
+            ERRCHK(fi_close(&fabric->fid));
 
             LOG2<TRACE>() << ("All freed");
         }
@@ -482,9 +482,8 @@ namespace cse498 {
             ERRCHK(fi_close(&tx_cq->fid));
             ERRCHK(fi_close(&rx_cq->fid));
             ERRCHK(fi_close(&av->fid));
-            ERRCHK(fi_close(&fabric->fid));
             ERRCHK(fi_close(&domain->fid));
-
+            ERRCHK(fi_close(&fabric->fid));
         }
 
         /**
