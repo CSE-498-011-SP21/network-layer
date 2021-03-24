@@ -1,6 +1,10 @@
 /**
  * @file
  */
+
+#include "unique_buf.hh"
+#include "Macros.hh"
+
 #include <unistd.h>
 #include <cassert>
 #include <rdma/fabric.h>
@@ -14,32 +18,8 @@
 #include <vector>
 #include <functional>
 
-#include <kvcg_log2.hh>
-
 #ifndef NETWORKLAYER_CONNECTIONLESS_HH
 #define NETWORKLAYER_CONNECTIONLESS_HH
-
-#define ERRCHK(x) error_check_2((x), __FILE__, __LINE__);
-
-inline void error_check_2(int err, std::string file, int line) {
-    if (err) {
-        LOG2<ERROR>() << "ERROR (" << err << "): " << fi_strerror(-err) << " " << file << ":" << line;
-        _exit(1);
-    }
-}
-
-#define ERRREPORT(x) error_report((x), __FILE__, __LINE__);
-
-inline bool error_report(int err, std::string file, int line) {
-    if (err) {
-        //LOG2<TRACE>() << "ERROR (" << err << "): " << fi_strerror(-err) << " " << file << ":" << line;
-        return false;
-    }
-    return true;
-}
-
-#define MAJOR_VERSION_USED 1
-#define MINOR_VERSION_USED 9
 
 static_assert(FI_MAJOR_VERSION == MAJOR_VERSION_USED && FI_MINOR_VERSION >= MINOR_VERSION_USED,
               "Rely on libfabric 1.9");
@@ -79,7 +59,7 @@ namespace cse498 {
 
             done = false;
 
-            LOG2<TRACE>() << "Getting fi provider";
+            DO_LOG(TRACE) << "Getting fi provider";
             hints = fi_allocinfo();
             hints->caps = FI_MSG | FI_TAGGED | FI_DIRECTED_RECV;
             hints->ep_attr->type = FI_EP_RDM;
@@ -87,25 +67,25 @@ namespace cse498 {
 
             ERRCHK(fi_getinfo(FI_VERSION(MAJOR_VERSION_USED, MINOR_VERSION_USED), fabricAddress,
                               std::to_string(port).c_str(), FI_SOURCE, hints, &fi));
-            LOG2<DEBUG>() << "Using provider: " << fi->fabric_attr->prov_name;
-            LOG2<DEBUG>() << "SRC ADDR: " << fi->fabric_attr->name;
-            LOG2<TRACE>() << "Creating fabric object";
+            DO_LOG(DEBUG) << "Using provider: " << fi->fabric_attr->prov_name;
+            DO_LOG(DEBUG) << "SRC ADDR: " << fi->fabric_attr->name;
+            DO_LOG(TRACE) << "Creating fabric object";
             ERRCHK(fi_fabric(fi->fabric_attr, &fabric, nullptr));
-            LOG2<TRACE>() << "Creating domain";
+            DO_LOG(TRACE) << "Creating domain";
             ERRCHK(fi_domain(fabric, fi, &domain, NULL));
-            LOG2<TRACE>() << "Creating tx completion queue";
+            DO_LOG(TRACE) << "Creating tx completion queue";
             memset(&cq_attr, 0, sizeof(cq_attr));
             cq_attr.wait_obj = FI_WAIT_NONE;
             cq_attr.format = FI_CQ_FORMAT_TAGGED;
             cq_attr.size = fi->tx_attr->size;
             ERRCHK(fi_cq_open(domain, &cq_attr, &tx_cq, NULL));
-            LOG2<TRACE>() << "Creating rx completion queue";
+            DO_LOG(TRACE) << "Creating rx completion queue";
             cq_attr.size = fi->rx_attr->size;
             ERRCHK(fi_cq_open(domain, &cq_attr, &rx_cq, NULL));
 
             // Create an address vector. This allows connectionless endpoints to communicate
             // without having to resolve addresses, such as IPv4, during data transfers.
-            LOG2<TRACE>() << "Creating address vector";
+            DO_LOG(TRACE) << "Creating address vector";
             memset(&av_attr, 0, sizeof(av_attr));
             av_attr.type = fi->domain_attr->av_type ?
                            fi->domain_attr->av_type : FI_AV_MAP;
@@ -113,22 +93,22 @@ namespace cse498 {
             av_attr.name = NULL;
             ERRCHK(fi_av_open(domain, &av_attr, &av, NULL));
 
-            LOG2<TRACE>() << "Creating endpoint";
+            DO_LOG(TRACE) << "Creating endpoint";
             ERRCHK(fi_endpoint(domain, fi, &ep, NULL));
 
             // Could create multiple endpoints, especially if there are multiple NICs available.
 
             ERRCHK(fi_ep_bind(ep, &av->fid, 0));
 
-            LOG2<TRACE>() << "Binding Rx CQ to EP";
+            DO_LOG(TRACE) << "Binding Rx CQ to EP";
             ERRCHK(fi_ep_bind(ep, &rx_cq->fid, FI_RECV));
 
 
-            LOG2<TRACE>() << "Binding Tx CQ to EP";
+            DO_LOG(TRACE) << "Binding Tx CQ to EP";
             ERRCHK(fi_ep_bind(ep, &tx_cq->fid, FI_TRANSMIT));
 
             // Enable EP
-            LOG2<TRACE>() << "Enabling EP";
+            DO_LOG(TRACE) << "Enabling EP";
             ERRCHK(fi_enable(ep));
 
         }
@@ -147,7 +127,7 @@ namespace cse498 {
             ERRCHK(fi_close(&domain->fid));
             ERRCHK(fi_close(&fabric->fid));
 
-            LOG2<TRACE>() << ("All freed");
+            DO_LOG(TRACE) << ("All freed");
         }
 
         /**
@@ -157,7 +137,7 @@ namespace cse498 {
          * @return address
          */
         inline addr_t accept(char *buf, size_t size) {
-            LOG2<TRACE>() << "Server: Posting recv";
+            DO_LOG(TRACE) << "Server: Posting recv";
 
             bool b = false;
             do {
@@ -167,7 +147,7 @@ namespace cse498 {
             ERRCHK(wait_for_completion(rx_cq));
             uint64_t sizeOfAddress = *(uint64_t *) buf;
 
-            LOG2<TRACE>() << "Server: Adding client to AV";
+            DO_LOG(TRACE) << "Server: Adding client to AV";
 
             addr_t remote_addr;
 
@@ -176,7 +156,7 @@ namespace cse498 {
                 perror("Error");
                 exit(1);
             }
-            LOG2<TRACE>() << "Server: Added client to AV";
+            DO_LOG(TRACE) << "Server: Added client to AV";
             return remote_addr;
         }
 
@@ -186,7 +166,7 @@ namespace cse498 {
          * @param size
          */
         inline void async_accept(char *buf, size_t size) {
-            LOG2<TRACE>() << "Server: Posting recv";
+            DO_LOG(TRACE) << "Server: Posting recv";
             bool b = false;
             do {
                 b = ERRREPORT(fi_trecv(ep, buf, size, nullptr, FI_ADDR_UNSPEC, 1, 0, nullptr));
@@ -203,7 +183,7 @@ namespace cse498 {
             ERRCHK(wait_for_completion(rx_cq));
             uint64_t sizeOfAddress = *(uint64_t *) buf;
 
-            LOG2<TRACE>() << "Server: Adding client to AV";
+            DO_LOG(TRACE) << "Server: Adding client to AV";
 
             addr_t remote_addr;
 
@@ -212,7 +192,7 @@ namespace cse498 {
                 perror("Error");
                 exit(1);
             }
-            LOG2<TRACE>() << "Server: Added client to AV";
+            DO_LOG(TRACE) << "Server: Added client to AV";
             return remote_addr;
         }
 
@@ -256,7 +236,7 @@ namespace cse498 {
          * @param size size of buffer
          */
         inline void recv(addr_t remote_addr, char *buf, size_t size) {
-            LOG2<TRACE>() << "Server: Posting recv";
+            DO_LOG(TRACE) << "Server: Posting recv";
             ERRCHK(fi_trecv(ep, buf, size, nullptr, remote_addr, 2, 0, nullptr));
             ERRCHK(wait_for_completion(rx_cq));
         }
@@ -269,7 +249,7 @@ namespace cse498 {
          * @return true on success, false on failure
          */
         inline bool try_recv(addr_t remote_addr, char *buf, size_t size) {
-            LOG2<TRACE>() << "Server: Posting recv";
+            DO_LOG(TRACE) << "Server: Posting recv";
             bool b = ERRREPORT(fi_trecv(ep, buf, size, nullptr, remote_addr, 2, 0, nullptr));
             if (b) {
                 ERRCHK(wait_for_completion(rx_cq));
@@ -285,7 +265,7 @@ namespace cse498 {
          * @param size size of buffer
          */
         inline void send(addr_t remote_addr, char *buf, size_t size) {
-            LOG2<TRACE>() << "Server: Posting send";
+            DO_LOG(TRACE) << "Server: Posting send";
             ERRCHK(fi_tsend(ep, buf, size, nullptr, remote_addr, 2, nullptr));
             ERRCHK(wait_for_completion(tx_cq));
         }
@@ -298,14 +278,14 @@ namespace cse498 {
          * @return true on success, false on failure
          */
         inline bool try_send(addr_t remote_addr, char *buf, size_t size) {
-            LOG2<TRACE>() << "Server: Posting send";
+            DO_LOG(TRACE) << "Server: Posting send";
             bool b = ERRREPORT(fi_tsend(ep, buf, size, nullptr, remote_addr, 2, nullptr));
             if (b) {
                 ERRCHK(wait_for_completion(tx_cq));
-                LOG2<TRACE>() << "Server: message sent";
+                DO_LOG(TRACE) << "Server: message sent";
                 return true;
             }
-            LOG2<TRACE>() << "Server: message send failed";
+            DO_LOG(TRACE) << "Server: message send failed";
             return false;
         }
 
@@ -317,7 +297,7 @@ namespace cse498 {
          * @return true on success, false on failure
          */
         inline bool async_send(addr_t remote_addr, char *buf, size_t size) {
-            LOG2<TRACE>() << "Server: Posting send";
+            DO_LOG(TRACE) << "Server: Posting send";
             return ERRREPORT(fi_tsend(ep, buf, size, nullptr, remote_addr, 2, nullptr));
         }
 
@@ -326,7 +306,7 @@ namespace cse498 {
          */
         inline void wait_send() {
             ERRCHK(wait_for_completion(tx_cq));
-            LOG2<TRACE>() << "Server: Posting sent";
+            DO_LOG(TRACE) << "Server: Posting sent";
         }
 
         /**
@@ -366,7 +346,7 @@ namespace cse498 {
                     // New error on queue
                     struct fi_cq_err_entry err_entry;
                     fi_cq_readerr(cq, &err_entry, 0);
-                    LOG2<TRACE>() << ("{0} {1}", fi_strerror(err_entry.err),
+                    DO_LOG(TRACE) << ("{0} {1}", fi_strerror(err_entry.err),
                             fi_cq_strerror(cq, err_entry.prov_errno,
                                            err_entry.err_data, NULL, 0));
                     return ret;
@@ -375,7 +355,7 @@ namespace cse498 {
         }
 
         inline bool try_recv_tag(addr_t remote_addr, char *buf, size_t size, uint64_t tag) {
-            LOG2<TRACE>() << "Server: Posting recv";
+            DO_LOG(TRACE) << "Server: Posting recv";
             bool b = ERRREPORT(fi_trecv(ep, buf, size, nullptr, remote_addr, tag, 0, nullptr));
             if (b) {
                 ERRCHK(wait_for_completion(rx_cq));
@@ -385,14 +365,14 @@ namespace cse498 {
         }
 
         inline bool try_send_tag(addr_t remote_addr, char *buf, size_t size, uint64_t tag) {
-            LOG2<TRACE>() << "Server: Posting send";
+            DO_LOG(TRACE) << "Server: Posting send";
             bool b = ERRREPORT(fi_tsend(ep, buf, size, nullptr, remote_addr, tag, nullptr));
             if (b) {
                 ERRCHK(wait_for_completion(tx_cq));
-                LOG2<TRACE>() << "Server: message sent";
+                DO_LOG(TRACE) << "Server: message sent";
                 return true;
             }
-            LOG2<TRACE>() << "Server: message send failed";
+            DO_LOG(TRACE) << "Server: message send failed";
             return false;
         }
 
@@ -419,7 +399,7 @@ namespace cse498 {
          * @param port connect to this port
          */
         ConnectionlessClient(const char *address, uint16_t port, uint32_t protocol = FI_PROTO_SOCK_TCP) {
-            LOG2<TRACE>() << ("Getting fi provider");
+            DO_LOG(TRACE) << ("Getting fi provider");
             hints = fi_allocinfo();
             hints->caps = FI_MSG | FI_TAGGED;
             hints->ep_attr->type = FI_EP_RDM;
@@ -427,42 +407,42 @@ namespace cse498 {
 
             ERRCHK(fi_getinfo(FI_VERSION(MAJOR_VERSION_USED, MINOR_VERSION_USED), address,
                               std::to_string(port).c_str(), 0, hints, &fi));
-            LOG2<TRACE>() << "Using provider: " << fi->fabric_attr->prov_name;
-            LOG2<TRACE>() << "Creating fabric object";
+            DO_LOG(TRACE) << "Using provider: " << fi->fabric_attr->prov_name;
+            DO_LOG(TRACE) << "Creating fabric object";
             ERRCHK(fi_fabric(fi->fabric_attr, &fabric, nullptr));
-            LOG2<TRACE>() << "Creating domain";
+            DO_LOG(TRACE) << "Creating domain";
             ERRCHK(fi_domain(fabric, fi, &domain, NULL));
-            LOG2<TRACE>() << "Creating tx completion queue";
+            DO_LOG(TRACE) << "Creating tx completion queue";
             memset(&cq_attr, 0, sizeof(cq_attr));
             cq_attr.wait_obj = FI_WAIT_NONE;
             cq_attr.format = FI_CQ_FORMAT_TAGGED;
             cq_attr.size = fi->tx_attr->size;
             ERRCHK(fi_cq_open(domain, &cq_attr, &tx_cq, NULL));
-            LOG2<TRACE>() << "Creating rx completion queue";
+            DO_LOG(TRACE) << "Creating rx completion queue";
             cq_attr.size = fi->rx_attr->size;
             ERRCHK(fi_cq_open(domain, &cq_attr, &rx_cq, NULL));
 
             // Create an address vector. This allows connectionless endpoints to communicate
             // without having to resolve addresses, such as IPv4, during data transfers.
-            LOG2<TRACE>() << "Creating address vector";
+            DO_LOG(TRACE) << "Creating address vector";
 
             memset(&av_attr, 0, sizeof(av_attr));
             av_attr.type = fi->domain_attr->av_type;
             av_attr.count = 1;
             ERRCHK(fi_av_open(domain, &av_attr, &av, NULL));
-            LOG2<TRACE>() << "Creating endpoint";
+            DO_LOG(TRACE) << "Creating endpoint";
             ERRCHK(fi_endpoint(domain, fi, &ep, NULL));
 
             // Could create multiple endpoints, especially if there are multiple NICs available.
 
             ERRCHK(fi_ep_bind(ep, &av->fid, 0));
-            LOG2<TRACE>() << "Binding TX CQ to EP";
+            DO_LOG(TRACE) << "Binding TX CQ to EP";
             ERRCHK(fi_ep_bind(ep, &tx_cq->fid, FI_TRANSMIT));
-            LOG2<TRACE>() << "Binding RX CQ to EP";
+            DO_LOG(TRACE) << "Binding RX CQ to EP";
             ERRCHK(fi_ep_bind(ep, &rx_cq->fid, FI_RECV));
 
             // Enable EP
-            LOG2<TRACE>() << "Enabling EP";
+            DO_LOG(TRACE) << "Enabling EP";
             ERRCHK(fi_enable(ep));
 
             if (1 != fi_av_insert(av, fi->dest_addr, 1, &remote_addr, 0, NULL)) {
@@ -497,11 +477,11 @@ namespace cse498 {
             char *addr = new char[addrlen];
             ERRCHK(fi_getname(&ep->fid, addr, &addrlen));
 
-            LOG2<TRACE>() << "Client: Sending (" << addrlen << ") " << (void *) addr << " to " << remote_addr;
+            DO_LOG(TRACE) << "Client: Sending (" << addrlen << ") " << (void *) addr << " to " << remote_addr;
 
             memcpy(buf, &addrlen, sizeof(uint64_t));
             memcpy(buf + sizeof(uint64_t), addr, addrlen);
-            LOG2<TRACE>() << "Client: Sending " << sizeof(uint64_t) + addrlen << "B in " << size << "B buffer";
+            DO_LOG(TRACE) << "Client: Sending " << sizeof(uint64_t) + addrlen << "B in " << size << "B buffer";
 
             assert(size >= (sizeof(uint64_t) + addrlen));
 
@@ -525,11 +505,11 @@ namespace cse498 {
             char *addr = new char[addrlen];
             ERRCHK(fi_getname(&ep->fid, addr, &addrlen));
 
-            LOG2<TRACE>() << "Client: Sending (" << addrlen << ") " << (void *) addr << " to " << remote_addr;
+            DO_LOG(TRACE) << "Client: Sending (" << addrlen << ") " << (void *) addr << " to " << remote_addr;
 
             memcpy(buf, &addrlen, sizeof(uint64_t));
             memcpy(buf + sizeof(uint64_t), addr, addrlen);
-            LOG2<TRACE>() << "Client: Sending " << sizeof(uint64_t) + addrlen << "B in " << size << "B buffer";
+            DO_LOG(TRACE) << "Client: Sending " << sizeof(uint64_t) + addrlen << "B in " << size << "B buffer";
 
             assert(size >= (sizeof(uint64_t) + addrlen));
             delete[] addr;
@@ -568,11 +548,11 @@ namespace cse498 {
             char *addr = new char[addrlen];
             ERRCHK(fi_getname(&ep->fid, addr, &addrlen));
 
-            LOG2<TRACE>() << "Client: Sending (" << addrlen << ") " << (void *) addr << " to " << remote_addr;
+            DO_LOG(TRACE) << "Client: Sending (" << addrlen << ") " << (void *) addr << " to " << remote_addr;
 
             memcpy(buf, &addrlen, sizeof(uint64_t));
             memcpy(buf + sizeof(uint64_t), addr, addrlen);
-            LOG2<TRACE>() << "Client: Sending " << sizeof(uint64_t) + addrlen << "B in " << size << "B buffer";
+            DO_LOG(TRACE) << "Client: Sending " << sizeof(uint64_t) + addrlen << "B in " << size << "B buffer";
 
             assert(size >= (sizeof(uint64_t) + addrlen));
 
@@ -609,13 +589,13 @@ namespace cse498 {
         }
 
         inline bool async_send(char *buf, size_t size) {
-            LOG2<TRACE>() << "Client: Posting send";
+            DO_LOG(TRACE) << "Client: Posting send";
             return ERRREPORT(fi_tsend(ep, buf, size, nullptr, remote_addr, 2, nullptr));
         }
 
         inline void wait_send() {
             ERRCHK(wait_for_completion(tx_cq));
-            LOG2<TRACE>() << "Client: Posting sent";
+            DO_LOG(TRACE) << "Client: Posting sent";
         }
 
         /**
@@ -653,7 +633,7 @@ namespace cse498 {
                     // New error on queue
                     struct fi_cq_err_entry err_entry;
                     fi_cq_readerr(cq, &err_entry, 0);
-                    LOG2<TRACE>() << fi_strerror(err_entry.err) << " " <<
+                    DO_LOG(TRACE) << fi_strerror(err_entry.err) << " " <<
                                   fi_cq_strerror(cq, err_entry.prov_errno,
                                                  err_entry.err_data, NULL, 0);
                     return ret;
@@ -662,25 +642,25 @@ namespace cse498 {
         }
 
         inline bool try_recv_tag(char *buf, size_t size, uint64_t tag) {
-            LOG2<TRACE>() << "Client: Posting recv";
+            DO_LOG(TRACE) << "Client: Posting recv";
             bool b = ERRREPORT(fi_trecv(ep, buf, size, nullptr, remote_addr, tag, 0, nullptr));
             if (b) {
                 ERRCHK(wait_for_completion(rx_cq));
-                LOG2<TRACE>() << "Client: message recv";
+                DO_LOG(TRACE) << "Client: message recv";
                 return true;
             }
             return false;
         }
 
         inline bool try_send_tag(char *buf, size_t size, uint64_t tag) {
-            LOG2<TRACE>() << "Client: Posting send";
+            DO_LOG(TRACE) << "Client: Posting send";
             bool b = ERRREPORT(fi_tsend(ep, buf, size, nullptr, remote_addr, tag, nullptr));
             if (b) {
                 ERRCHK(wait_for_completion(tx_cq));
-                LOG2<TRACE>() << "Client: message sent";
+                DO_LOG(TRACE) << "Client: message sent";
                 return true;
             }
-            LOG2<TRACE>() << "Client: message send failed";
+            DO_LOG(TRACE) << "Client: message send failed";
             return false;
         }
 

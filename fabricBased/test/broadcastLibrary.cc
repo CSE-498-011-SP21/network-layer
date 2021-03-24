@@ -12,6 +12,6 @@ void rbc(cse498::ConnectionlessServer &c, const std::vector<cse498::addr_t> &add
     reliableBroadcast(c, addresses, message, messageSize);
 }
 
-void rbc(std::vector<cse498::Connection> &connections, const char *message, size_t messageSize) {
+void rbc(std::vector<cse498::Connection> &connections, cse498::unique_buf& message, size_t messageSize) {
     reliableBroadcast(connections, message, messageSize);
 }

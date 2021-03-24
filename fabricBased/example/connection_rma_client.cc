@@ -20,11 +20,11 @@ int main(int argc, char** argv){
 
     std::cerr << "Recv" << std::endl;
 
-    c2->wait_recv(buf, 1);
+    c2->recv(buf, 1);
 
     *((uint64_t *) buf) = 10;
 
-    c2->wait_read(buf, sizeof(uint64_t), 0, 1);
+    c2->read(buf, sizeof(uint64_t), 0, 1);
 
     while ((*(uint64_t *) buf) != ~0);
 
@@ -32,6 +32,6 @@ int main(int argc, char** argv){
 
     std::cerr << "Send" << std::endl;
 
-    c2->wait_send(buf, 1);
+    c2->send(buf, 1);
 
 }

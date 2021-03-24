@@ -1,5 +1,8 @@
 #pragma once
 
+#include "unique_buf.hh"
+#include "Macros.hh"
+
 #include <rdma/fabric.h>
 #include <rdma/fi_domain.h>
 #include <rdma/fi_endpoint.h>
@@ -7,39 +10,10 @@
 #include <rdma/fi_errno.h>
 #include <rdma/fi_cm.h>
 #include <rdma/fi_tagged.h>
-
-#include <kvcg_log2.hh>
-
 #include <functional>
 #include <cstring>
 #include <map>
-
-/**
- * Checks if the value is negative and if so prints the error, otherwise returns the value. 
- * Pretty cool!
- **/
-#define SAFE_CALL(ans) callCheck((ans), __FILE__, __LINE__)
-
-inline int callCheck(int err, const char *file, int line, bool abort = true) {
-    if (err < 0) {
-        DO_LOG(ERROR) << "ERROR (" << err << "): " << fi_strerror(-err) << " " << file << ":" << line;
-        exit(1);
-    }
-    return err;
-}
-
-#define ERRREPORT2(x) error_report2((x), __FILE__, __LINE__);
-
-inline bool error_report2(int err, std::string file, int line) {
-    if (err) {
-        LOG2<TRACE>() << "ERROR (" << err << "): " << fi_strerror(-err) << " " << file << ":" << line;
-        return false;
-    }
-    return true;
-}
-
-#define MAJOR_VERSION_USED 1
-#define MINOR_VERSION_USED 9
+#include <cassert>
 
 static_assert(FI_MAJOR_VERSION == MAJOR_VERSION_USED && FI_MINOR_VERSION >= MINOR_VERSION_USED,
               "Rely on libfabric 1.9");
@@ -64,65 +38,61 @@ namespace cse498 {
          * @param is_server Whether this machine is the server (doesn't matter which one in a connection is the server as long as one is)
          * @param port Port to connection on. Defaults to 8080
          **/
-        Connection(const char *addr, bool is_server, const int port = 8080) {
-            create_hints();
+        Connection(const char *addr, bool is_server, const int port = 8080, uint32_t protocol = FI_PROTO_SOCK_TCP) {
+            create_hints(protocol);
 
             if (is_server) {
-                LOG2<DEBUG>() << "Initializing passive connection";
-                //std::string *server_addr = nullptr; // For localhost you have to define the address, but if its not localhost it will crash if the address is defined. libfabric is weird.
-                //if (addr != nullptr && strcmp(addr, "127.0.0.1") == 0) { // Lazy execution is neat
-                //    server_addr = new std::string("127.0.0.1");
-                //}
+                DO_LOG(DEBUG) << "Initializing passive connection";
                 SAFE_CALL(fi_getinfo(FI_VERSION(MAJOR_VERSION_USED, MINOR_VERSION_USED),
                                      addr,
                                      std::to_string(port).c_str(), FI_SOURCE,
                                      hints, &info));
-                LOG2<TRACE>() << "Creating fabric";
+                DO_LOG(TRACE) << "Creating fabric";
                 SAFE_CALL(fi_fabric(info->fabric_attr, &fab, nullptr));
-                LOG2<DEBUG>() << "Using provider: " << info->fabric_attr->prov_name;
+                DO_LOG(DEBUG) << "Using provider: " << info->fabric_attr->prov_name;
 
                 open_eq();
 
                 fid_pep *pep;
-                LOG2<TRACE>() << "Creating passive endpoint";
+                DO_LOG(TRACE) << "Creating passive endpoint";
                 SAFE_CALL(fi_passive_ep(fab, info, &pep, nullptr));
 
-                LOG2<TRACE>() << "Binding eq to pep";
+                DO_LOG(TRACE) << "Binding eq to pep";
                 SAFE_CALL(fi_pep_bind(pep, &eq->fid, 0));
-                LOG2<TRACE>() << "Transitioning pep to listening state";
+                DO_LOG(TRACE) << "Transitioning pep to listening state";
                 SAFE_CALL(fi_listen(pep));
 
 
                 uint32_t event;
                 struct fi_eq_cm_entry entry = {};
-                LOG2<TRACE>() << "Waiting for connection request";
+                DO_LOG(TRACE) << "Waiting for connection request";
                 int rd = SAFE_CALL(fi_eq_sread(eq, &event, &entry, sizeof(entry), -1, 0));
                 // May want to check that the address is correct.
                 if (rd != sizeof(entry)) {
-                    LOG2<ERROR>() << "There was an error reading the connection request.";
+                    DO_LOG(ERROR) << "There was an error reading the connection request.";
                     exit(1);
                 }
 
                 if (event != FI_CONNREQ) {
-                    LOG2<ERROR>() << "Incorrect event type";
+                    DO_LOG(ERROR) << "Incorrect event type";
                     exit(1);
                 }
                 fi_close(&pep->fid);
                 info = entry.info;
-                LOG2<TRACE>() << "Connection request received";
+                DO_LOG(TRACE) << "Connection request received";
 
                 setup_active_ep();
 
-                LOG2<TRACE>() << "Accepting connection request";
+                DO_LOG(TRACE) << "Accepting connection request";
                 SAFE_CALL(fi_accept(ep, nullptr, 0));
 
                 wait_for_eq_connected();
             } else {
-                LOG2<DEBUG>() << "Initializing client";
+                DO_LOG(DEBUG) << "Initializing client";
                 SAFE_CALL(fi_getinfo(FI_VERSION(MAJOR_VERSION_USED, MINOR_VERSION_USED), addr,
                                      std::to_string(port).c_str(), 0, hints,
                                      &info));
-                LOG2<DEBUG>() << "Using provider: " << info->fabric_attr->prov_name;
+                DO_LOG(DEBUG) << "Using provider: " << info->fabric_attr->prov_name;
 
                 SAFE_CALL(fi_fabric(info->fabric_attr, &fab, nullptr));
 
@@ -130,9 +100,9 @@ namespace cse498 {
 
                 setup_active_ep();
 
-                LOG2<TRACE>() << "Sending connection request";
+                DO_LOG(TRACE) << "Sending connection request";
                 while (fi_connect(ep, info->dest_addr, nullptr, 0) < 0);
-                LOG2<TRACE>() << "Connection request sent";
+                DO_LOG(TRACE) << "Connection request sent";
 
                 wait_for_eq_connected();
             }
@@ -185,7 +155,7 @@ namespace cse498 {
         }
 
         ~Connection() {
-            LOG2<TRACE>() << "Closing all the fabric objects";
+            DO_LOG(TRACE) << "Closing all the fabric objects";
             fi_freeinfo(hints);
             fi_freeinfo(info);
             if (fab) {
@@ -209,10 +179,28 @@ namespace cse498 {
          *
          * @param data The data to send
          * @param size The size of the data
+         * @param offset offset into buffer
          **/
-        inline void wait_send(const char *data, const size_t size) {
-            async_send(data, size);
-            LOG2<DEBUG3>() << "Sending " << size << " bytes";
+        [[deprecated("Use with unique_buf instead")]]
+        inline void send(const char *buf, size_t size) {
+            async_send(buf, size);
+            DO_LOG(DEBUG3) << "Sending " << size << " bytes";
+            wait_for_sends();
+        }
+
+        /**
+         * Sends a message through the endpoint, blocking until completion. This will
+         * also block until all previous messages sent by async_send are completed as
+         * well (this means you can touch any data buffer from any previous send after
+         * calling this)
+         *
+         * @param data The data to send
+         * @param size The size of the data
+         * @param offset offset into buffer
+         **/
+        inline void send(unique_buf &data, size_t size, size_t offset = 0) {
+            async_send(data, size, offset);
+            DO_LOG(DEBUG3) << "Sending " << size << " bytes";
             wait_for_sends();
         }
 
@@ -225,14 +213,26 @@ namespace cse498 {
          *
          * @param data The data to send
          * @param size The size of the data
+         * @return true on success
          **/
-        inline void async_send(const char *data, const size_t size) {
-            if (size > MAX_MSG_SIZE) {
-                LOG2<ERROR>() << "Too large of a message!";
+        inline bool async_send(unique_buf &data, const size_t size, size_t offset = 0) {
+            assert(data.isRegistered());
+            if (size + offset > MAX_MSG_SIZE) {
+                DO_LOG(ERROR) << "Too large of a message!";
                 exit(1);
             }
             ++msg_sends;
-            SAFE_CALL(fi_send(ep, data, size, nullptr, 0, nullptr));
+            return ERRREPORT(fi_send(ep, data.get() + offset, size, nullptr, 0, nullptr));
+        }
+
+        [[deprecated("Use with unique_buf instead")]]
+        inline bool async_send(const char *buf, const size_t size) {
+            if (size > MAX_MSG_SIZE) {
+                DO_LOG(ERROR) << "Too large of a message!";
+                exit(1);
+            }
+            ++msg_sends;
+            return ERRREPORT(fi_send(ep, buf, size, nullptr, 0, nullptr));
         }
 
         /**
@@ -241,7 +241,7 @@ namespace cse498 {
          **/
         inline void wait_for_sends() {
             while (msg_sends > 0) {
-                LOG2<DEBUG3>() << "Waiting for " << msg_sends << " message(s) to send.";
+                DO_LOG(DEBUG3) << "Waiting for " << msg_sends << " message(s) to send.";
                 msg_sends -= SAFE_CALL(wait_for_completion(tx_cq));
             }
         }
@@ -252,9 +252,18 @@ namespace cse498 {
          * @param buf The buffer to store the message data in
          * @param max_len The maximum length of the message (should be <= MAX_MSG_SIZE)
          **/
-        inline void wait_recv(char *buf, size_t max_len) {
+        inline void recv(unique_buf &data, size_t max_len, size_t offset = 0) {
+            assert(data.isRegistered());
+
+            SAFE_CALL(fi_recv(ep, data.get() + offset, max_len, nullptr, 0, nullptr));
+            DO_LOG(DEBUG3) << "Receiving up to " << max_len << " bytes";
+            SAFE_CALL(wait_for_completion(rx_cq));
+        }
+
+        [[deprecated("Use with unique_buf instead")]]
+        inline void recv(char *buf, size_t max_len) {
             SAFE_CALL(fi_recv(ep, buf, max_len, nullptr, 0, nullptr));
-            LOG2<DEBUG3>() << "Receiving up to " << max_len << " bytes";
+            DO_LOG(DEBUG3) << "Receiving up to " << max_len << " bytes";
             SAFE_CALL(wait_for_completion(rx_cq));
         }
 
@@ -264,15 +273,29 @@ namespace cse498 {
          * @param buf The buffer to store the message data in
          * @param max_len The maximum length of the message (should be <= MAX_MSG_SIZE)
          **/
-        inline bool try_recv(char *buf, size_t max_len) {
-            LOG2<DEBUG3>() << "Receiving up to " << max_len << " bytes";
-            bool b = ERRREPORT2(fi_recv(ep, buf, max_len, nullptr, 0, nullptr));
+        inline bool try_recv(unique_buf &data, size_t max_len, size_t offset = 0) {
+            assert(data.isRegistered());
+
+            DO_LOG(DEBUG3) << "Receiving up to " << max_len << " bytes";
+            bool b = ERRREPORT(fi_recv(ep, data.get() + offset, max_len, nullptr, 0, nullptr));
             if (b) {
                 SAFE_CALL(wait_for_completion(rx_cq));
                 return true;
             }
             return false;
         }
+
+        [[deprecated("Use with unique_buf instead")]]
+        inline bool try_recv(char *buf, size_t max_len) {
+            DO_LOG(DEBUG3) << "Receiving up to " << max_len << " bytes";
+            bool b = ERRREPORT(fi_recv(ep, buf, max_len, nullptr, 0, nullptr));
+            if (b) {
+                SAFE_CALL(wait_for_completion(rx_cq));
+                return true;
+            }
+            return false;
+        }
+
 
         /**
          * Registers a new memory region which only works for this connection. If there is already
@@ -286,17 +309,62 @@ namespace cse498 {
          * @param key The access key for the memory region. The other side of the connection should use the same key (0 works well for this)
          * @return True if there was another region with the same key that needed to be closed. 
          **/
+        inline bool register_mr(unique_buf &data, uint64_t access, uint64_t key) {
+            auto elem = mrs->find(key);
+            if (elem == mrs->end()) {
+                mrs->insert({key, create_mr(data.get(), data.size(), access, key)});
+                data.registerMemoryCallback(key);
+                return false;
+            } else {
+                DO_LOG(INFO) << "Closing old memory region";
+                SAFE_CALL(fi_close(&elem->second->fid));
+                elem->second = create_mr(data.get(), data.size(), access, key);
+                data.registerMemoryCallback(key);
+                return true;
+            }
+        }
+
+        /**
+         * Registers a new memory region which only works for this connection. If there is already
+         * a memory region registered with the same key then it will close the previous one and register
+         * this one. You can use this to change permissions for a memory region on a specific connection
+         * (by calling this function again on the same buf, but with the new access flags)
+         *
+         * @param buf The buffer to register
+         * @param size The size of the buffer
+         * @param access The access flags for the memory region (FI_WRITE, FI_REMOTE_WRITE, FI_READ, and/or FI_REMOTE_READ. Bitwise or for multiple permissions)
+         * @param key The access key for the memory region. The other side of the connection should use the same key (0 works well for this)
+         * @return True if there was another region with the same key that needed to be closed.
+         **/
+        [[deprecated("Use with unique_buf instead")]]
         inline bool register_mr(char *buf, size_t size, uint64_t access, uint64_t key) {
             auto elem = mrs->find(key);
             if (elem == mrs->end()) {
                 mrs->insert({key, create_mr(buf, size, access, key)});
                 return false;
             } else {
-                LOG2<INFO>() << "Closing old memory region";
+                DO_LOG(INFO) << "Closing old memory region";
                 SAFE_CALL(fi_close(&elem->second->fid));
                 elem->second = create_mr(buf, size, access, key);
                 return true;
             }
+        }
+
+
+        /**
+         * Write from buf with given size to the addr with the given key
+         * Note addresses start at 0
+         * @param buf
+         * @param size
+         * @param addr
+         * @param key
+         */
+        inline void write(unique_buf &data, size_t size, uint64_t addr, uint64_t key, size_t offset = 0) {
+            assert(data.isRegistered());
+
+            SAFE_CALL(fi_write(ep, data.get() + offset, size, nullptr, 0, addr, key, nullptr));
+            DO_LOG(DEBUG3) << "Write " << key << "-" << addr << " sent";
+            SAFE_CALL(wait_for_completion(tx_cq));
         }
 
         /**
@@ -307,9 +375,10 @@ namespace cse498 {
          * @param addr
          * @param key
          */
-        inline void wait_write(const char *buf, size_t size, uint64_t addr, uint64_t key) {
+        [[deprecated("Use with unique_buf instead")]]
+        inline void write(const char *buf, size_t size, uint64_t addr, uint64_t key) {
             SAFE_CALL(fi_write(ep, buf, size, nullptr, 0, addr, key, nullptr));
-            LOG2<DEBUG3>() << "Write " << key << "-" << addr << " sent";
+            DO_LOG(DEBUG3) << "Write " << key << "-" << addr << " sent";
             SAFE_CALL(wait_for_completion(tx_cq));
         }
 
@@ -320,11 +389,21 @@ namespace cse498 {
          * @param addr
          * @param key
          */
-        inline void wait_read(char *buf, size_t size, uint64_t addr, uint64_t key) {
-            SAFE_CALL(fi_read(ep, buf, size, nullptr, 0, addr, key, nullptr));
-            LOG2<DEBUG3>() << "Read " << key << "-" << addr << " sent";
+        inline void read(unique_buf &data, size_t size, uint64_t addr, uint64_t key, size_t offset = 0) {
+            assert(data.isRegistered());
+
+            SAFE_CALL(fi_read(ep, data.get() + offset, size, nullptr, 0, addr, key, nullptr));
+            DO_LOG(DEBUG3) << "Read " << key << "-" << addr << " sent";
             SAFE_CALL(wait_for_completion(tx_cq));
         }
+
+        [[deprecated("Use with unique_buf instead")]]
+        inline void read(char *buf, size_t size, uint64_t addr, uint64_t key) {
+            SAFE_CALL(fi_read(ep, buf, size, nullptr, 0, addr, key, nullptr));
+            DO_LOG(DEBUG3) << "Read " << key << "-" << addr << " sent";
+            SAFE_CALL(wait_for_completion(tx_cq));
+        }
+
 
         /**
          * Same as above but nonblocking
@@ -333,10 +412,24 @@ namespace cse498 {
          * @param addr
          * @param key
          */
-        inline bool try_read(char *buf, size_t size, uint64_t addr, uint64_t key) {
+        inline bool try_read(unique_buf &data, size_t size, uint64_t addr, uint64_t key, size_t offset = 0) {
+            assert(data.isRegistered());
+
             //SAFE_CALL(fi_read(ep, buf, size, nullptr, 0, addr, key, nullptr));
-            LOG2<DEBUG3>() << "Read " << key << "-" << addr << " sent";
-            bool b = ERRREPORT2(fi_read(ep, buf, size, nullptr, 0, addr, key, nullptr));
+            DO_LOG(DEBUG3) << "Read " << key << "-" << addr << " sent";
+            bool b = ERRREPORT(fi_read(ep, data.get() + offset, size, nullptr, 0, addr, key, nullptr));
+            if (b) {
+                SAFE_CALL(wait_for_completion(tx_cq));
+                return true;
+            }
+            return false;
+        }
+
+        [[deprecated("Use with unique_buf instead")]]
+        inline bool try_read(char *buf, size_t size, uint64_t addr, uint64_t key, size_t offset = 0) {
+            //SAFE_CALL(fi_read(ep, buf, size, nullptr, 0, addr, key, nullptr));
+            DO_LOG(DEBUG3) << "Read " << key << "-" << addr << " sent";
+            bool b = ERRREPORT(fi_read(ep, buf, size, nullptr, 0, addr, key, nullptr));
             if (b) {
                 SAFE_CALL(wait_for_completion(tx_cq));
                 return true;
@@ -346,7 +439,7 @@ namespace cse498 {
 
         /*inline void read_local(char *buf, size_t size, uint64_t addr, uint64_t key) {
             int ret = SAFE_CALL(fi_read(ep, buf, size, fi_mr_desc(mr), ~0, addr, key, nullptr));
-            LOG2<INFO>() << "Read sent: " << ret;
+            DO_LOG(INFO) << "Read sent: " << ret;
             SAFE_CALL(wait_for_completion(tx_cq));
         }*/
 
@@ -371,17 +464,17 @@ namespace cse498 {
                 ret = fi_cq_read(cq, &entry,
                                  1); // TODO an rma write will likely cause the rx_cq to receive something, so I have to be careful about that.
                 if (ret > 0) {
-                    LOG2<TRACE>() << "Entry flags " << entry.flags;
-                    LOG2<TRACE>() << "Entry rma " << (entry.flags & FI_RMA);
-                    LOG2<TRACE>() << "Entry len " << entry.len;
-                    LOG2<TRACE>() << "Entry ops " << entry.op_context;
+                    DO_LOG(TRACE) << "Entry flags " << entry.flags;
+                    DO_LOG(TRACE) << "Entry rma " << (entry.flags & FI_RMA);
+                    DO_LOG(TRACE) << "Entry len " << entry.len;
+                    DO_LOG(TRACE) << "Entry ops " << entry.op_context;
                     return ret;
                 }
                 if (ret != -FI_EAGAIN) {
                     // New error on queue
                     struct fi_cq_err_entry err_entry;
                     fi_cq_readerr(cq, &err_entry, 0);
-                    LOG2<ERROR>() << fi_cq_strerror(cq, err_entry.prov_errno, err_entry.err_data, nullptr, 0);
+                    DO_LOG(ERROR) << fi_cq_strerror(cq, err_entry.prov_errno, err_entry.err_data, nullptr, 0);
                     return ret;
                 }
             }
@@ -389,9 +482,10 @@ namespace cse498 {
 
         inline fid_mr *create_mr(char *buf, size_t size, uint64_t access, uint64_t key) {
             fid_mr *mr;
-            LOG2<TRACE>() << "Registering memory region";
+            DO_LOG(TRACE) << "Registering memory region";
             SAFE_CALL(fi_mr_reg(domain, buf, size, access, 0, key, 0, &mr, nullptr));
-            LOG2<INFO>() << "MR KEY:" << fi_mr_key(mr);
+            DO_LOG(INFO) << "MR KEY:" << fi_mr_key(mr);
+            assert(fi_mr_key(mr) == key);
             return mr;
         }
 
@@ -400,12 +494,12 @@ namespace cse498 {
          *
          * Requires nothing to be set
          **/
-        inline void create_hints() {
+        inline void create_hints(uint32_t protocol) {
             hints = fi_allocinfo();
             hints->caps = FI_MSG | FI_RMA | FI_ATOMIC;
             hints->ep_attr->type = FI_EP_MSG;
-            hints->ep_attr->protocol = FI_PROTO_RDMA_CM_IB_RC;
-            hints->domain_attr->mr_mode = FI_MR_LOCAL | FI_MR_ALLOCATED | FI_MR_PROV_KEY | FI_MR_VIRT_ADDR; //| FI_MR_VIRT_ADDR | FI_MR_ALLOCATED | FI_MR_PROV_KEY;
+            hints->ep_attr->protocol = protocol;
+            hints->domain_attr->mr_mode = FI_MR_LOCAL | FI_MR_ALLOCATED | FI_MR_PROV_KEY | FI_MR_VIRT_ADDR;
         }
 
         /**
@@ -417,7 +511,7 @@ namespace cse498 {
             fi_eq_attr eq_attr = {};
             eq_attr.size = 1; // Minimum size, maybe not required.
             eq_attr.wait_obj = FI_WAIT_UNSPEC;
-            LOG2<TRACE>() << "Opening event queue";
+            DO_LOG(TRACE) << "Opening event queue";
             SAFE_CALL(fi_eq_open(fab, &eq_attr, &eq, nullptr));
         }
 
@@ -431,14 +525,14 @@ namespace cse498 {
             cq_attr.wait_obj = FI_WAIT_NONE;
             cq_attr.size = info->tx_attr->size;
             cq_attr.format = FI_CQ_FORMAT_MSG;
-            LOG2<TRACE>() << "Creating tx completion queue";
+            DO_LOG(TRACE) << "Creating tx completion queue";
             SAFE_CALL(fi_cq_open(domain, &cq_attr, &tx_cq, NULL));
             cq_attr.size = info->rx_attr->size;
-            LOG2<TRACE>() << "Creating rx completion queue";
+            DO_LOG(TRACE) << "Creating rx completion queue";
             SAFE_CALL(fi_cq_open(domain, &cq_attr, &rx_cq, NULL));
-            LOG2<TRACE>() << "Binding TX CQ to EP";
+            DO_LOG(TRACE) << "Binding TX CQ to EP";
             SAFE_CALL(fi_ep_bind(ep, &tx_cq->fid, FI_TRANSMIT));
-            LOG2<TRACE>() << "Binding RX CQ to EP";
+            DO_LOG(TRACE) << "Binding RX CQ to EP";
             SAFE_CALL(fi_ep_bind(ep, &rx_cq->fid, FI_RECV));
         }
 
@@ -448,19 +542,19 @@ namespace cse498 {
         inline void wait_for_eq_connected() {
             struct fi_eq_cm_entry entry;
             uint32_t event;
-            LOG2<TRACE>() << "Reading eq for FI_CONNECTED event";
+            DO_LOG(TRACE) << "Reading eq for FI_CONNECTED event";
             int addr_len = fi_eq_sread(eq, &event, &entry, sizeof(entry), -1, 0);
-            if(addr_len < 1){
+            if (addr_len < 1) {
                 struct fi_eq_err_entry err_entry;
                 fi_eq_readerr(eq, &err_entry, 0);
-                LOG2<ERROR>() << fi_eq_strerror(eq, err_entry.prov_errno, err_entry.err_data, nullptr, 0);
+                DO_LOG(ERROR) << fi_eq_strerror(eq, err_entry.prov_errno, err_entry.err_data, nullptr, 0);
             }
             SAFE_CALL(addr_len);
             if (event != FI_CONNECTED) {
-                LOG2<ERROR>() << "Not a connected event";
+                DO_LOG(ERROR) << "Not a connected event";
                 exit(1);
             }
-            LOG2<DEBUG>() << "Connected";
+            DO_LOG(DEBUG) << "Connected";
         }
 
         /**
@@ -469,33 +563,47 @@ namespace cse498 {
          * Requires fab, info to be set.
          **/
         inline void setup_active_ep() {
-            LOG2<TRACE>() << "Creating domain";
+            DO_LOG(TRACE) << "Creating domain";
             SAFE_CALL(fi_domain(fab, info, &domain, nullptr));
 
-            LOG2<TRACE>() << "Creating active endpoint";
+            DO_LOG(TRACE) << "Creating active endpoint";
             SAFE_CALL(fi_endpoint(domain, info, &ep, nullptr));
 
             setup_cqs();
 
-            LOG2<TRACE>() << "Binding eq to pep";
+            DO_LOG(TRACE) << "Binding eq to pep";
             SAFE_CALL(fi_ep_bind(ep, &eq->fid, 0));
 
-            LOG2<TRACE>() << "Enabling endpoint";
+            DO_LOG(TRACE) << "Enabling endpoint";
             SAFE_CALL(fi_enable(ep));
         }
     };
 
     /**
- * Performs best effort broadcast
- * @param clients clients to send to
- * @param message message to send
- * @param messageSize size of message
- */
+     * Performs best effort broadcast
+     * @param clients clients to send to
+     * @param message message to send
+     * @param messageSize size of message
+     */
+    [[deprecated("Use with unique_buf instead")]]
     inline void bestEffortBroadcast(std::vector<Connection> &connections, const char *message, size_t messageSize) {
         for (auto &c : connections) {
-            c.wait_send(message, messageSize);
+            c.send(message, messageSize);
         }
     }
+
+    /**
+     * Performs best effort broadcast
+     * @param clients clients to send to
+     * @param message message to send
+     * @param messageSize size of message
+     */
+    inline void bestEffortBroadcast(std::vector<Connection> &connections, unique_buf &message, size_t messageSize) {
+        for (auto &c : connections) {
+            c.send(message, messageSize);
+        }
+    }
+
 
     /**
      * Performs best effort broadcast recieve from client
@@ -504,7 +612,17 @@ namespace cse498 {
      * @param sizeOfBuf buffer size
      */
     inline void bestEffortBroadcastReceiveFrom(Connection &connections, char *buf, size_t sizeOfBuf) {
-        connections.wait_recv(buf, sizeOfBuf);
+        connections.recv(buf, sizeOfBuf);
+    }
+
+    /**
+     * Performs best effort broadcast recieve from client
+     * @param clients clients to recv from
+     * @param buf buffer
+     * @param sizeOfBuf buffer size
+     */
+    inline void bestEffortBroadcastReceiveFrom(Connection &connections, unique_buf &buf, size_t sizeOfBuf) {
+        connections.recv(buf, sizeOfBuf);
     }
 
     /**
@@ -516,6 +634,17 @@ namespace cse498 {
     inline void reliableBroadcast(std::vector<Connection> &connections, const char *message, size_t messageSize) {
         bestEffortBroadcast(connections, message, messageSize);
     }
+
+    /**
+     * Reliably broadcast from a server
+     * @param clients clients to send to
+     * @param message message to send
+     * @param messageSize size of message
+     */
+    inline void reliableBroadcast(std::vector<Connection> &connections, unique_buf &message, size_t messageSize) {
+        bestEffortBroadcast(connections, message, messageSize);
+    }
+
 
     /**
      * Receive from
@@ -533,7 +662,7 @@ namespace cse498 {
                                  size_t bufSize, const std::function<bool(char *, size_t)> &checkIfReceivedBefore,
                                  const std::function<void(char *, size_t)> &markAsReceived) {
 
-        receiveFrom.wait_recv(buf, bufSize);
+        receiveFrom.recv(buf, bufSize);
 
         if (!checkIfReceivedBefore(buf, bufSize)) {
             bestEffortBroadcast(connections, buf, bufSize);
@@ -543,4 +672,35 @@ namespace cse498 {
         return false;
 
     }
+
+    /**
+     * Receive from
+     * @param receiveFrom node to receive from
+     * @param clients clients to send to
+     * @param buf buffer to use (registered)
+     * @param bufSize size of buffer to use
+     * @param checkIfReceivedBefore function to check if the message has been received before
+     * @param markAsReceived function to mark a message as received
+     * @return true if it has not been received before
+     */
+    inline bool
+    reliableBroadcastReceiveFrom(Connection &receiveFrom, std::vector<Connection> &connections,
+                                 unique_buf &buf,
+                                 const std::function<bool(unique_buf &, size_t)> &checkIfReceivedBefore,
+                                 const std::function<void(unique_buf &, size_t)> &markAsReceived) {
+
+        receiveFrom.recv(buf, buf.size());
+
+        DO_LOG(DEBUG) << "Received message in broadcast";
+
+        if (!checkIfReceivedBefore(buf, buf.size())) {
+            bestEffortBroadcast(connections, buf, buf.size());
+            markAsReceived(buf, buf.size());
+            DO_LOG(DEBUG) << "Delivered message in broadcast";
+            return true;
+        }
+        return false;
+
+    }
+
 };

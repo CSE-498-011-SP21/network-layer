@@ -27,11 +27,11 @@ int main(int argc, char** argv) {
 
     std::cerr << "Send\n";
 
-    c1->wait_send(buf, 1);
+    c1->send(buf, 1);
 
     std::cerr << "Recv\n";
 
-    c1->wait_recv(buf, 1);
+    c1->recv(buf, 1);
 
     return 0;
 }
