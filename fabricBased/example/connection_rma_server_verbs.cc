@@ -31,6 +31,12 @@ int main(int argc, char **argv) {
 
     c1->send(buf, sizeof(uint64_t));
 
+    std::cerr << "Send\n";
+
+    *((uint64_t*)buf.get()) = (uint64_t)buf.get();
+
+    c1->send(buf, sizeof(uint64_t));
+
     std::cerr << "Recv\n";
 
     c1->recv(buf, 1);

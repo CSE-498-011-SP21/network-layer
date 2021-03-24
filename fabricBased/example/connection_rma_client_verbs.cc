@@ -30,9 +30,15 @@ int main(int argc, char** argv){
 
     std::cerr << "Remote key is " << remoteKey << std::endl;
 
+    c2->recv(buf, 4096);
+
+    uint64_t remoteAddr = *((uint64_t *) buf.get());
+
+    std::cerr << "Remote addr is " << remoteAddr << std::endl;
+
     *((uint64_t *) buf.get()) = 10;
 
-    c2->read(buf, sizeof(uint64_t), 0, remoteKey);
+    c2->read(buf, sizeof(uint64_t), remoteAddr, remoteKey);
 
     while ((*(uint64_t *) buf.get()) != ~0);
 
