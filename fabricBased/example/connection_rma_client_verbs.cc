@@ -47,4 +47,7 @@ int main(int argc, char** argv){
     std::cerr << "Send" << std::endl;
 
     c2->send(buf, 1);
+
+    // connection_rma_server_verbs: prov/util/src/util_mem_monitor.c:132: ofi_monitor_cleanup: Assertion `dlist_empty(&memhooks_monitor->list)' failed.
+    return 0;
 }
