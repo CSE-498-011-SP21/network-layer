@@ -64,9 +64,10 @@ namespace cse498 {
             return buf;
         }
 
-        inline void registerMemoryCallback(uint64_t key) {
+        inline void registerMemoryCallback(uint64_t key, void* d) {
             registered = true;
             key_ = key;
+            desc = d;
         }
 
         [[nodiscard]] inline uint64_t key() const {
@@ -78,6 +79,10 @@ namespace cse498 {
             return s_;
         }
 
+        [[nodiscard]] inline void* getDesc() {
+            return desc;
+        }
+
         [[nodiscard]] inline bool isRegistered() const{
             return registered;
         }
@@ -87,6 +92,7 @@ namespace cse498 {
         const size_t s_ = 4096;
         bool registered = false;
         uint64_t key_;
+        void* desc = nullptr;
     };
 
 }

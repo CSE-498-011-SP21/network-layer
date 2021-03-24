@@ -4,7 +4,7 @@
 
 #include <networklayer/connection.hh>
 
-int LOG_LEVEL = DEBUG;
+int LOG_LEVEL = TRACE;
 
 int main(int argc, char** argv){
     
@@ -23,6 +23,7 @@ int main(int argc, char** argv){
 
     std::cerr << "Recv" << std::endl;
 
+    std::cerr << "Using buffer " << (void*) buf.get() << std::endl; 
     c2->recv(buf, 4096);
 
     uint64_t remoteKey = *((uint64_t *) buf.get());

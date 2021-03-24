@@ -5,7 +5,7 @@
 #include <networklayer/connection.hh>
 #include <unistd.h>
 
-int LOG_LEVEL = DEBUG;
+int LOG_LEVEL = TRACE;
 
 int main(int argc, char **argv) {
 

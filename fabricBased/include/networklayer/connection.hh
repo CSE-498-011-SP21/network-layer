@@ -39,6 +39,15 @@ namespace cse498 {
          * @param port Port to connection on. Defaults to 8080
          **/
         Connection(const char *addr, bool is_server, const int port = 8080, uint32_t protocol = FI_PROTO_SOCK_TCP) {
+            hints = nullptr; 
+            info = nullptr;
+            fab = nullptr;
+            domain = nullptr;
+            eq = nullptr;
+            ep = nullptr;
+            rx_cq = nullptr;
+            tx_cq = nullptr;
+
             create_hints(protocol);
 
             if (is_server) {
@@ -222,7 +231,7 @@ namespace cse498 {
                 exit(1);
             }
             ++msg_sends;
-            return ERRREPORT(fi_send(ep, data.get() + offset, size, nullptr, 0, nullptr));
+            return ERRREPORT(fi_send(ep, data.get() + offset, size, data.getDesc(), 0, nullptr));
         }
 
         [[deprecated("Use with unique_buf instead")]]
@@ -254,8 +263,8 @@ namespace cse498 {
          **/
         inline void recv(unique_buf &data, size_t max_len, size_t offset = 0) {
             assert(data.isRegistered());
-
-            SAFE_CALL(fi_recv(ep, data.get() + offset, max_len, nullptr, 0, nullptr));
+            char* buf = data.get() + offset;
+            SAFE_CALL(fi_recv(ep, buf, max_len, data.getDesc(), 0, nullptr));
             DO_LOG(DEBUG3) << "Receiving up to " << max_len << " bytes";
             SAFE_CALL(wait_for_completion(rx_cq));
         }
@@ -277,7 +286,7 @@ namespace cse498 {
             assert(data.isRegistered());
 
             DO_LOG(DEBUG3) << "Receiving up to " << max_len << " bytes";
-            bool b = ERRREPORT(fi_recv(ep, data.get() + offset, max_len, nullptr, 0, nullptr));
+            bool b = ERRREPORT(fi_recv(ep, data.get() + offset, max_len, data.getDesc(), 0, nullptr));
             if (b) {
                 SAFE_CALL(wait_for_completion(rx_cq));
                 return true;
@@ -312,9 +321,9 @@ namespace cse498 {
         inline bool register_mr(unique_buf &data, uint64_t access, uint64_t& key) {
             auto elem = mrs->find(key);
             if (elem == mrs->end()) {
-                auto mr = create_mr(data.get(), data.size(), access, key);
+                fid_mr* mr = create_mr(data.get(), data.size(), access, key);
                 mrs->insert({key, mr});
-                data.registerMemoryCallback(key);
+                data.registerMemoryCallback(key, fi_mr_desc(mr));
                 return false;
             } else {
                 DO_LOG(INFO) << "Closing old memory region";
@@ -322,7 +331,7 @@ namespace cse498 {
                 auto key_before = key;
                 elem->second = create_mr(data.get(), data.size(), access, key);
                 assert(key_before == key);
-                data.registerMemoryCallback(key);
+                data.registerMemoryCallback(key, fi_mr_desc(elem->second));
                 return true;
             }
         }
@@ -368,7 +377,7 @@ namespace cse498 {
         inline void write(unique_buf &data, size_t size, uint64_t addr, uint64_t key, size_t offset = 0) {
             assert(data.isRegistered());
 
-            SAFE_CALL(fi_write(ep, data.get() + offset, size, nullptr, 0, addr, key, nullptr));
+            SAFE_CALL(fi_write(ep, data.get() + offset, size, data.getDesc(), 0, addr, key, nullptr));
             DO_LOG(DEBUG3) << "Write " << key << "-" << addr << " sent";
             SAFE_CALL(wait_for_completion(tx_cq));
         }
@@ -398,7 +407,7 @@ namespace cse498 {
         inline void read(unique_buf &data, size_t size, uint64_t addr, uint64_t key, size_t offset = 0) {
             assert(data.isRegistered());
 
-            SAFE_CALL(fi_read(ep, data.get() + offset, size, nullptr, 0, addr, key, nullptr));
+            SAFE_CALL(fi_read(ep, data.get() + offset, size, data.getDesc(), 0, addr, key, nullptr));
             DO_LOG(DEBUG3) << "Read " << key << "-" << addr << " sent";
             SAFE_CALL(wait_for_completion(tx_cq));
         }
@@ -423,7 +432,7 @@ namespace cse498 {
 
             //SAFE_CALL(fi_read(ep, buf, size, nullptr, 0, addr, key, nullptr));
             DO_LOG(DEBUG3) << "Read " << key << "-" << addr << " sent";
-            bool b = ERRREPORT(fi_read(ep, data.get() + offset, size, nullptr, 0, addr, key, nullptr));
+            bool b = ERRREPORT(fi_read(ep, data.get() + offset, size, data.getDesc(), 0, addr, key, nullptr));
             if (b) {
                 SAFE_CALL(wait_for_completion(tx_cq));
                 return true;
@@ -464,7 +473,7 @@ namespace cse498 {
 
         // Based on connectionless.hh, but not identical. This returns the value from fi_cq_read. 
         inline int wait_for_completion(struct fid_cq *cq) {
-            fi_cq_msg_entry entry;
+            fi_cq_msg_entry entry = {};
             int ret;
             while (1) {
                 ret = fi_cq_read(cq, &entry,
@@ -487,9 +496,10 @@ namespace cse498 {
         }
 
         inline fid_mr *create_mr(char *buf, size_t size, uint64_t access, uint64_t& key) {
-            fid_mr *mr;
+            fid_mr *mr = nullptr;
             DO_LOG(TRACE) << "Registering memory region starting at " << (void*) buf;
             SAFE_CALL(fi_mr_reg(domain, buf, size, access, 0, key, 0, &mr, nullptr));
+            // need to wait on creation to finish
             DO_LOG(INFO) << "MR KEY: " << fi_mr_key(mr) << " for buffer starting at " << (void*) buf;
             key = fi_mr_key(mr);
             return mr;
@@ -546,12 +556,12 @@ namespace cse498 {
          * Performs a blocking read of the event queue until an FI_CONNECTED event is triggered.
          **/
         inline void wait_for_eq_connected() {
-            struct fi_eq_cm_entry entry;
-            uint32_t event;
+            struct fi_eq_cm_entry entry = {};
+            uint32_t event = 0;
             DO_LOG(TRACE) << "Reading eq for FI_CONNECTED event";
             int addr_len = fi_eq_sread(eq, &event, &entry, sizeof(entry), -1, 0);
             if (addr_len < 1) {
-                struct fi_eq_err_entry err_entry;
+                struct fi_eq_err_entry err_entry = {};
                 fi_eq_readerr(eq, &err_entry, 0);
                 DO_LOG(ERROR) << fi_eq_strerror(eq, err_entry.prov_errno, err_entry.err_data, nullptr, 0);
             }
