@@ -488,9 +488,9 @@ namespace cse498 {
 
         inline fid_mr *create_mr(char *buf, size_t size, uint64_t access, uint64_t& key) {
             fid_mr *mr;
-            DO_LOG(TRACE) << "Registering memory region";
+            DO_LOG(TRACE) << "Registering memory region starting at " << (void*) buf;
             SAFE_CALL(fi_mr_reg(domain, buf, size, access, 0, key, 0, &mr, nullptr));
-            DO_LOG(INFO) << "MR KEY:" << fi_mr_key(mr);
+            DO_LOG(INFO) << "MR KEY: " << fi_mr_key(mr) << " for buffer starting at " << (void*) buf;
             key = fi_mr_key(mr);
             return mr;
         }
