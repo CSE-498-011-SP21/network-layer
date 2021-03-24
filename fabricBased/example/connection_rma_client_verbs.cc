@@ -19,7 +19,7 @@ int main(int argc, char** argv){
     cse498::unique_buf buf;
 
     uint64_t key = 1;
-    c2->register_mr(buf, FI_SEND | FI_RECV | FI_READ | FI_WRITE, key);
+    c2->register_mr(buf, FI_SEND | FI_RECV | FI_READ | FI_WRITE | FI_REMOTE_READ, key);
 
     std::cerr << "Recv" << std::endl;
 
@@ -34,7 +34,7 @@ int main(int argc, char** argv){
 
     uint64_t remoteAddr = *((uint64_t *) buf.get());
 
-    std::cerr << "Remote addr is " << remoteAddr << std::endl;
+    std::cerr << "Remote addr is " << (void*) remoteAddr << std::endl;
 
     *((uint64_t *) buf.get()) = 10;
 
