@@ -306,19 +306,22 @@ namespace cse498 {
          * @param buf The buffer to register
          * @param size The size of the buffer
          * @param access The access flags for the memory region (FI_WRITE, FI_REMOTE_WRITE, FI_READ, and/or FI_REMOTE_READ. Bitwise or for multiple permissions)
-         * @param key The access key for the memory region. The other side of the connection should use the same key (0 works well for this)
+         * @param key The access key for the memory region. The other side of the connection should use the same key (0 works well for this). If the fabric changes it, it will set key.
          * @return True if there was another region with the same key that needed to be closed. 
          **/
-        inline bool register_mr(unique_buf &data, uint64_t access, uint64_t key) {
+        inline bool register_mr(unique_buf &data, uint64_t access, uint64_t& key) {
             auto elem = mrs->find(key);
             if (elem == mrs->end()) {
-                mrs->insert({key, create_mr(data.get(), data.size(), access, key)});
+                auto mr = create_mr(data.get(), data.size(), access, key);
+                mrs->insert({key, mr});
                 data.registerMemoryCallback(key);
                 return false;
             } else {
                 DO_LOG(INFO) << "Closing old memory region";
                 SAFE_CALL(fi_close(&elem->second->fid));
+                auto key_before = key;
                 elem->second = create_mr(data.get(), data.size(), access, key);
+                assert(key_before == key);
                 data.registerMemoryCallback(key);
                 return true;
             }
@@ -337,15 +340,18 @@ namespace cse498 {
          * @return True if there was another region with the same key that needed to be closed.
          **/
         [[deprecated("Use with unique_buf instead")]]
-        inline bool register_mr(char *buf, size_t size, uint64_t access, uint64_t key) {
+        inline bool register_mr(char *buf, size_t size, uint64_t access, uint64_t& key) {
             auto elem = mrs->find(key);
             if (elem == mrs->end()) {
-                mrs->insert({key, create_mr(buf, size, access, key)});
+                auto mr = create_mr(buf, size, access, key);
+                mrs->insert({key, mr});
                 return false;
             } else {
                 DO_LOG(INFO) << "Closing old memory region";
                 SAFE_CALL(fi_close(&elem->second->fid));
+                auto key_before = key;
                 elem->second = create_mr(buf, size, access, key);
+                assert(key_before == key);
                 return true;
             }
         }
@@ -480,12 +486,12 @@ namespace cse498 {
             }
         }
 
-        inline fid_mr *create_mr(char *buf, size_t size, uint64_t access, uint64_t key) {
+        inline fid_mr *create_mr(char *buf, size_t size, uint64_t access, uint64_t& key) {
             fid_mr *mr;
             DO_LOG(TRACE) << "Registering memory region";
             SAFE_CALL(fi_mr_reg(domain, buf, size, access, 0, key, 0, &mr, nullptr));
             DO_LOG(INFO) << "MR KEY:" << fi_mr_key(mr);
-            assert(fi_mr_key(mr) == key);
+            key = fi_mr_key(mr);
             return mr;
         }
 

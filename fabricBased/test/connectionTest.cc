@@ -17,7 +17,8 @@ TEST(connectionTest, connection_async_send_recv) {
         cse498::unique_buf buf;
 
         buf.cpyTo(msg.c_str(), msg.length() + 1);
-        c1->register_mr(buf, FI_WRITE | FI_READ, 1);
+        uint64_t key = 1;
+        c1->register_mr(buf, FI_WRITE | FI_READ, key);
         c1->async_send(buf, msg.length() + 1);
         c1->wait_for_sends();
         delete c1;
@@ -27,7 +28,8 @@ TEST(connectionTest, connection_async_send_recv) {
     auto *c2 = new cse498::Connection("127.0.0.1", true);
 
     cse498::unique_buf buf;
-    c2->register_mr(buf, FI_WRITE | FI_READ, 1);
+    uint64_t key = 1;
+    c2->register_mr(buf, FI_WRITE | FI_READ, key);
     c2->recv(buf, 128);
     ASSERT_STREQ(msg.c_str(), buf.get());
     f.get();
@@ -42,7 +44,8 @@ TEST(connectionTest, connection_try_recv) {
         auto *c1 = new cse498::Connection("127.0.0.1", false);
 
         cse498::unique_buf buf;
-        c1->register_mr(buf, FI_WRITE | FI_READ, 1);
+        uint64_t key = 1;
+        c1->register_mr(buf, FI_WRITE | FI_READ, key);
 
         buf.cpyTo(msg.c_str(), msg.length() + 1);
 
@@ -54,7 +57,8 @@ TEST(connectionTest, connection_try_recv) {
     auto *c2 = new cse498::Connection("127.0.0.1", true);
 
     cse498::unique_buf buf;
-    c2->register_mr(buf, FI_WRITE | FI_READ, 1);
+    uint64_t key = 1;
+    c2->register_mr(buf, FI_WRITE | FI_READ, key);
 
     while (!c2->try_recv(buf, 128));
     ASSERT_STREQ(msg.c_str(), buf.get());
@@ -73,7 +77,8 @@ TEST(connectionTest, connection_wait_send_recv_response) {
         auto *c1 = new cse498::Connection(addr, true);
 
         cse498::unique_buf buf;
-        c1->register_mr(buf, FI_WRITE | FI_READ, 1);
+        uint64_t key = 1;
+        c1->register_mr(buf, FI_WRITE | FI_READ, key);
 
         buf.cpyTo(msg.c_str(), msg.length() + 1);
 
@@ -89,7 +94,8 @@ TEST(connectionTest, connection_wait_send_recv_response) {
     auto *c2 = new cse498::Connection("127.0.0.1", false);
 
     cse498::unique_buf buf;
-    c2->register_mr(buf, FI_WRITE | FI_READ, 1);
+    uint64_t key = 1;
+    c2->register_mr(buf, FI_WRITE | FI_READ, key);
 
     c2->recv(buf, 128);
     ASSERT_STREQ(msg.c_str(), buf.get());
@@ -115,8 +121,10 @@ TEST(connectionTest, connection_send_recv_multiple_connections) {
         auto *c0_c2 = new cse498::Connection(addr, true);
 
         cse498::unique_buf c0_to_c1_msg_buf, c0_to_c2_msg_buf;
-        c0_c1->register_mr(c0_to_c1_msg_buf, FI_WRITE | FI_READ, 1);
-        c0_c2->register_mr(c0_to_c2_msg_buf, FI_WRITE | FI_READ, 2);
+        uint64_t key = 1;
+        c0_c1->register_mr(c0_to_c1_msg_buf, FI_WRITE | FI_READ, key);
+        key = 2;
+        c0_c2->register_mr(c0_to_c2_msg_buf, FI_WRITE | FI_READ, key);
 
         c0_to_c1_msg_buf = c0_to_c1_msg;
         c0_to_c2_msg_buf = c0_to_c2_msg;
@@ -135,7 +143,8 @@ TEST(connectionTest, connection_send_recv_multiple_connections) {
         c1_connected = true;
 
         cse498::unique_buf buf;
-        c1->register_mr(buf, FI_WRITE | FI_READ, 1);
+        uint64_t key = 1;
+        c1->register_mr(buf, FI_WRITE | FI_READ, key);
 
         c1->recv(buf, 128);
         ASSERT_STREQ(c0_to_c1_msg.c_str(), buf.get());
@@ -147,7 +156,8 @@ TEST(connectionTest, connection_send_recv_multiple_connections) {
     auto *c2 = new cse498::Connection("127.0.0.1", false);
 
     cse498::unique_buf buf;
-    c2->register_mr(buf, FI_WRITE | FI_READ, 1);
+    uint64_t key = 1;
+    c2->register_mr(buf, FI_WRITE | FI_READ, key);
 
     c2->recv(buf, 128);
     ASSERT_STREQ(c0_to_c2_msg.c_str(), buf.get());
@@ -164,8 +174,10 @@ TEST(connectionTest, connection_broadcast) {
         const char *addr = "127.0.0.1";
         cse498::Connection c1 = cse498::Connection(addr, false);
         cse498::unique_buf buf, buf3;
-        c1.register_mr(buf, FI_WRITE | FI_READ, 1);
-        c1.register_mr(buf3, FI_WRITE | FI_READ, 2);
+        uint64_t key = 1;
+        c1.register_mr(buf, FI_WRITE | FI_READ, key);
+        key = 2;
+        c1.register_mr(buf3, FI_WRITE | FI_READ, key);
 
         std::vector<cse498::Connection> v;
         v.push_back(std::move(c1));
@@ -181,7 +193,8 @@ TEST(connectionTest, connection_broadcast) {
     auto *c2 = new cse498::Connection("127.0.0.1", true);
 
     cse498::unique_buf buf2;
-    c2->register_mr(buf2, FI_WRITE | FI_READ, 1);
+    uint64_t key = 1;
+    c2->register_mr(buf2, FI_WRITE | FI_READ, key);
     std::vector<cse498::Connection> v = {};
     // Should be false since hasnt recieved before
     bool res = cse498::reliableBroadcastReceiveFrom(*c2, v, buf2,
@@ -212,8 +225,9 @@ TEST(connectionTest, connection_rma) {
         auto *c1 = new cse498::Connection(addr, true);
 
         *((uint64_t *) remoteAccess.get()) = ~0;
+        uint64_t key = 1;
         c1->register_mr(remoteAccess, FI_WRITE | FI_REMOTE_WRITE | FI_READ | FI_REMOTE_READ,
-                        1);
+                        key);
 
         latch = true;
         while (!done);
@@ -225,7 +239,8 @@ TEST(connectionTest, connection_rma) {
     // c2 stuff
 
     auto *c2 = new cse498::Connection("127.0.0.1", false);
-    c2->register_mr(buf, FI_WRITE | FI_READ, 1);
+    uint64_t key = 1;
+    c2->register_mr(buf, FI_WRITE | FI_READ, key);
 
     *((uint64_t *) buf.get()) = 10;
     while (!latch);
@@ -257,8 +272,9 @@ TEST(connectionTest, connection_rma_try_read) {
         auto *c1 = new cse498::Connection(addr, true);
 
         *((uint64_t *) remoteAccess.get()) = ~0;
+        uint64_t key = 1;
         c1->register_mr(remoteAccess, FI_WRITE | FI_REMOTE_WRITE | FI_READ | FI_REMOTE_READ,
-                        1);
+                        key);
 
         latch = true;
         while (!done);
@@ -268,7 +284,8 @@ TEST(connectionTest, connection_rma_try_read) {
     });
 
     auto *c2 = new cse498::Connection("127.0.0.1", false);
-    c2->register_mr(buf, FI_WRITE | FI_READ, 1);
+    uint64_t key = 1;
+    c2->register_mr(buf, FI_WRITE | FI_READ, key);
 
     *((uint64_t *) buf.get()) = 10;
     while (!latch);
@@ -315,21 +332,23 @@ TEST(connectionTest, connection_changing_rma_perms) {
         auto *c0_c1 = new cse498::Connection(addr, true);
         // c2's connection to c0
         auto *c0_c2 = new cse498::Connection(addr, true);
+        uint64_t key = 1;
         ASSERT_EQ(false, c0_c1->register_mr(remoteAccess,
-                                            FI_WRITE | FI_REMOTE_WRITE | FI_READ | FI_REMOTE_READ, 1));
+                                            FI_WRITE | FI_REMOTE_WRITE | FI_READ | FI_REMOTE_READ, key));
         ASSERT_EQ(false, c0_c2->register_mr(remoteAccess,
-                                            FI_WRITE | FI_REMOTE_WRITE | FI_READ | FI_REMOTE_READ, 1));
+                                            FI_WRITE | FI_REMOTE_WRITE | FI_READ | FI_REMOTE_READ, key));
+        key = 2;
         ASSERT_EQ(false, c0_c1->register_mr(remoteAccess2,
-                                            FI_WRITE | FI_REMOTE_WRITE | FI_READ | FI_REMOTE_READ, 2));
+                                            FI_WRITE | FI_REMOTE_WRITE | FI_READ | FI_REMOTE_READ, key));
         ASSERT_EQ(false, c0_c2->register_mr(remoteAccess2,
-                                            FI_WRITE | FI_REMOTE_WRITE | FI_READ | FI_REMOTE_READ, 2));
+                                            FI_WRITE | FI_REMOTE_WRITE | FI_READ | FI_REMOTE_READ, key));
         mr_registered = true;
 
         while (!mr1_wrote || !mr2_wrote);
         ASSERT_EQ(10, *((uint64_t *) remoteAccess.get()));
         ASSERT_EQ(100, *((uint64_t *) remoteAccess2.get()));
 
-        ASSERT_EQ(true, c0_c2->register_mr(remoteAccess2, FI_READ | FI_REMOTE_READ, 2));
+        ASSERT_EQ(true, c0_c2->register_mr(remoteAccess2, FI_READ | FI_REMOTE_READ, key));
         perms_updated = true;
 
         while (!c2_done);
@@ -346,7 +365,8 @@ TEST(connectionTest, connection_changing_rma_perms) {
         auto *c1 = new cse498::Connection("127.0.0.1", false);
         c1_connected = true;
         cse498::unique_buf buf;
-        c1->register_mr(buf, FI_READ | FI_WRITE, 1);
+        uint64_t key = 1;
+        c1->register_mr(buf, FI_READ | FI_WRITE, key);
 
         while (!mr_registered);
 
@@ -370,7 +390,8 @@ TEST(connectionTest, connection_changing_rma_perms) {
 
     auto *c2 = new cse498::Connection("127.0.0.1", false);
     cse498::unique_buf buf;
-    c2->register_mr(buf, FI_READ | FI_WRITE, 1);
+    uint64_t key = 1;
+    c2->register_mr(buf, FI_READ | FI_WRITE, key);
 
     while (!mr_registered);
     *((uint64_t *) buf.get()) = 10;

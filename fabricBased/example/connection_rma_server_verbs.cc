@@ -20,8 +20,8 @@ int main(int argc, char **argv) {
     auto *c1 = new cse498::Connection(addr, true, 8080, FI_PROTO_RDMA_CM_IB_RC);
 
     *((uint64_t *) remoteAccess.get()) = ~0;
-    c1->register_mr(remoteAccess, FI_WRITE | FI_REMOTE_WRITE | FI_READ | FI_REMOTE_READ,
-                    1);
+    uint64_t key = 1;
+    c1->register_mr(remoteAccess, FI_WRITE | FI_REMOTE_WRITE | FI_READ | FI_REMOTE_READ, key);
 
     std::cerr << "Send\n";
 

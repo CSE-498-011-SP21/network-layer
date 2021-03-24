@@ -18,7 +18,8 @@ int main(int argc, char** argv){
 
     cse498::unique_buf buf;
 
-    c2->register_mr(buf, FI_READ | FI_WRITE, 1);
+    uint64_t key = 1;
+    c2->register_mr(buf, FI_READ | FI_WRITE, key);
 
     std::cerr << "Recv" << std::endl;
 
