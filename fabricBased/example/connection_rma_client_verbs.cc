@@ -27,6 +27,8 @@ int main(int argc, char** argv){
 
     uint64_t remoteKey = *((uint64_t *) buf.get());
 
+    std::cerr << "Remote key is " << remoteKey << std::endl;
+
     *((uint64_t *) buf.get()) = 10;
 
     c2->read(buf, sizeof(uint64_t), 0, remoteKey);
