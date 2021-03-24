@@ -14,24 +14,25 @@ int main(int argc, char** argv){
         addr = argv[1];
     }
     int port = 8080;
-    cse498::Connection *c2 = new cse498::Connection(addr.c_str(), port);
+    auto *c2 = new cse498::Connection(addr.c_str(), port);
 
-    char *buf = new char[sizeof(uint64_t)];
+    cse498::unique_buf buf;
+
+    c2->register_mr(buf, FI_READ | FI_WRITE, 1);
 
     std::cerr << "Recv" << std::endl;
 
     c2->recv(buf, 1);
 
-    *((uint64_t *) buf) = 10;
+    *((uint64_t *) buf.get()) = 10;
 
     c2->read(buf, sizeof(uint64_t), 0, 1);
 
-    while ((*(uint64_t *) buf) != ~0);
+    while ((*(uint64_t *) buf.get()) != ~0);
 
-    std::cerr << "Read: " << *(uint64_t *) buf << std::endl;
+    std::cerr << "Read: " << *(uint64_t *) buf.get() << std::endl;
 
     std::cerr << "Send" << std::endl;
 
     c2->send(buf, 1);
-
 }
