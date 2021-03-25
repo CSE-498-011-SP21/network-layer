@@ -233,13 +233,11 @@ TEST(connectionTest, connection_rma_try_read) {
     *((uint64_t *) buf) = 10;
     while (!latch);
     while (!c2->try_read(buf, sizeof(uint64_t), 0, 1));
-    //c2->wait_read(buf, sizeof(uint64_t), 0, 1);
     std::cerr << "Read: " << *(uint64_t *) buf << std::endl;
     ASSERT_TRUE(*((uint64_t *) buf) == ~0);
 
     *((uint64_t *) buf) = 0;
-    while(!c2->try_write(buf, sizeof(uint64_t), 0, 1))
-    c2->wait_write(buf, sizeof(uint64_t), 0, 1);
+    while(!c2->try_write(buf, sizeof(uint64_t), 0, 1));
     done = true;
     f.get();
 
@@ -312,13 +310,13 @@ TEST(connectionTest, connection_changing_rma_perms) {
         while (!mr_registered);
 
         *((uint64_t *) buf) = 100;
-        c1->wait_write(buf, sizeof(uint64_t), 0, 2);
+        ASSERT_TRUE(c1->try_write(buf, sizeof(uint64_t), 0, 2));
         mr2_wrote = true;
 
         while (!perms_updated);
 
         *((uint64_t *) buf) = 1000;
-        c1->wait_write(buf, sizeof(uint64_t), 0, 2); // Make sure it can still write on 2
+        ASSERT_TRUE(c1->try_write(buf, sizeof(uint64_t), 0, 2)); // Make sure it can still write on 2
 
         c1_done = true;
         while (!c0_done);
@@ -333,16 +331,16 @@ TEST(connectionTest, connection_changing_rma_perms) {
     char *buf = new char[sizeof(uint64_t)];
     while (!mr_registered);
     *((uint64_t *) buf) = 10;
-    c2->wait_write(buf, sizeof(uint64_t), 0, 1);
+    ASSERT_TRUE(c2->try_write(buf, sizeof(uint64_t), 0, 1));
     mr1_wrote = true;
 
     while (!c1_done);
 
-    c2->wait_read(buf, sizeof(uint64_t), 0, 2); // Make sure it still has read access. 
+    ASSERT_TRUE(c2->try_read(buf, sizeof(uint64_t), 0, 2)); // Make sure it still has read access. 
     ASSERT_EQ(1000, *((uint64_t *) buf));
 
     *((uint64_t *) buf) = 10000;
-    c2->wait_write(buf, sizeof(uint64_t), 0, 1); // Make sure it can still write on 1. 
+    ASSERT_TRUE(c2->try_write(buf, sizeof(uint64_t), 0, 1)); // Make sure it can still write on 1. 
 
     *((uint64_t *) buf) = 100000;
 
@@ -350,6 +348,7 @@ TEST(connectionTest, connection_changing_rma_perms) {
     // Once we update wait_write to return on failure instead of exit we need to re-add this line (with the proper assertion)
     // (I've tried to use ASSERT_EXIT with this but it seems to hang indefinitely, likely since it calls fork which I doubt works well with networking)
     // c2->wait_write(buf, sizeof(uint64_t), 0, 2); // Make sure it can't write on 2
+    ASSERT_FALSE(c2->try_write(buf, sizeof(uint64_t), 0, 2));
 
     c2_done = true;
 

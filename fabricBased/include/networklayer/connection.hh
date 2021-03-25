@@ -22,7 +22,7 @@
 
 inline int callCheck(int err, const char *file, int line, bool abort = true) {
     if (err < 0) {
-        DO_LOG(ERROR) << "ERROR (" << err << "): " << fi_strerror(-err) << " " << file << ":" << line;
+        LOG2<ERROR>() << "ERROR (" << err << "): " << fi_strerror(-err) << " " << file << ":" << line;
         exit(1);
     }
     return err;
@@ -31,11 +31,21 @@ inline int callCheck(int err, const char *file, int line, bool abort = true) {
 #define ERRREPORT2(x) error_report2((x), __FILE__, __LINE__);
 
 inline bool error_report2(int err, std::string file, int line) {
-    if (err) {
-        LOG2<TRACE>() << "ERROR (" << err << "): " << fi_strerror(-err) << " " << file << ":" << line;
+    if (err < 0) {
+        LOG2<WARNING>() << "ERROR (" << err << "): " << fi_strerror(-err) << " " << file << ":" << line;
         return false;
     }
     return true;
+}
+
+// This is SAFE_CALL without exiting. 
+#define ERRREPORT3(x) error_report3((x), __FILE__, __LINE__);
+
+inline int error_report3(int err, std::string file, int line) {
+    if (err < 0) {
+        LOG2<WARNING>() << "ERROR (" << err << "): " << fi_strerror(-err) << " " << file << ":" << line;
+    }
+    return err;
 }
 
 #define MAJOR_VERSION_USED 1
@@ -238,14 +248,12 @@ namespace cse498 {
         }
 
         /**
-         * This adds a message to the queue to be sent. It does not block. You cannot
-         * touch the data buffer until after wait_for_sends or wait_send is called,
-         * otherwise it may send the modified data buffer which is very bad (you should
-         * call one of those also before the program completes otherwise messages from
-         * async_send may not have been sent).
+         * This adds a message to the queue to be sent, blocking until completion. 
          *
          * @param data The data to send
          * @param size The size of the data
+         * 
+         * @return true on success
          **/
         inline bool try_send(const char *data, const size_t size) {
             if (size > MAX_MSG_SIZE) {
@@ -256,12 +264,33 @@ namespace cse498 {
             ++msg_sends;
             bool b = ERRREPORT2(fi_send(ep, data, size, nullptr, 0, nullptr));
             if (b) {
-                wait_for_sends();
-                LOG2<TRACE>() << "Message sent";
-                return true;
+                if (try_wait_for_sends()) {
+                    LOG2<TRACE>() << "Message sent";
+                    return true;
+                }
+                return false;
             }
             LOG2<TRACE>() << "Message send failed";
             return false;
+        }
+
+        /**
+         * Ensures all the previous sends were completed. This means after calling this
+         * you can modify the data buffer from async_send.
+         * 
+         * @return true on success
+         **/
+        inline bool try_wait_for_sends() {
+            while (msg_sends > 0) {
+                LOG2<DEBUG3>() << "Waiting for " << msg_sends << " message(s) to send.";
+                int ret = ERRREPORT3(wait_for_completion(tx_cq));
+                if (ret >= 0) {
+                    msg_sends -= ret;
+                } else {
+                    return false;
+                }
+            }
+            return true;
         }
 
         /**
@@ -288,17 +317,18 @@ namespace cse498 {
         }
 
         /**
-         * Same as above but nonblocking.
+         * Blocks until it receives a message from the endpoint.
          *
          * @param buf The buffer to store the message data in
          * @param max_len The maximum length of the message (should be <= MAX_MSG_SIZE)
+         * 
+         * @return true on success
          **/
         inline bool try_recv(char *buf, size_t max_len) {
             LOG2<DEBUG3>() << "Receiving up to " << max_len << " bytes";
             bool b = ERRREPORT2(fi_recv(ep, buf, max_len, nullptr, 0, nullptr));
             if (b) {
-                SAFE_CALL(wait_for_completion(rx_cq));
-                return true;
+                return ERRREPORT2(wait_for_completion(rx_cq));
             }
             return false;
         }
@@ -343,25 +373,27 @@ namespace cse498 {
         }
 
         /**
-         * Write from buf with given size to the addr with the given key
+         * Write from buf with given size to the addr with the given key. Blocks
+         * until completion. 
          * Note addresses start at 0
          * @param buf
          * @param size
          * @param addr
          * @param key
+         * 
+         * @return true on success
          */
         inline bool try_write(const char *buf, size_t size, uint64_t addr, uint64_t key) {
             bool b = ERRREPORT2(fi_write(ep, buf, size, nullptr, 0, addr, key, nullptr));
             LOG2<DEBUG3>() << "Write " << key << "-" << addr << " sent";
             if (b) {
-                SAFE_CALL(wait_for_completion(tx_cq));
-                return true;
+                return ERRREPORT2(wait_for_completion(tx_cq));
             }
             return false;
         }
 
         /**
-         * Read size bytes from the addr with the given key into buf
+         * Read size bytes from the addr with the given key into buf. 
          * @param buf
          * @param size
          * @param addr
@@ -374,19 +406,20 @@ namespace cse498 {
         }
 
         /**
-         * Same as above but nonblocking
+         * Read size bytes from the addr with the given key into buf. Blocks
+         * until completion. 
          * @param buf
          * @param size
          * @param addr
          * @param key
+         * 
+         * @return true on success
          */
         inline bool try_read(char *buf, size_t size, uint64_t addr, uint64_t key) {
-            //SAFE_CALL(fi_read(ep, buf, size, nullptr, 0, addr, key, nullptr));
             LOG2<DEBUG3>() << "Read " << key << "-" << addr << " sent";
             bool b = ERRREPORT2(fi_read(ep, buf, size, nullptr, 0, addr, key, nullptr));
             if (b) {
-                SAFE_CALL(wait_for_completion(tx_cq));
-                return true;
+                return ERRREPORT2(wait_for_completion(tx_cq));
             }
             return false;
         }
@@ -428,7 +461,7 @@ namespace cse498 {
                     // New error on queue
                     struct fi_cq_err_entry err_entry;
                     fi_cq_readerr(cq, &err_entry, 0);
-                    LOG2<ERROR>() << fi_cq_strerror(cq, err_entry.prov_errno, err_entry.err_data, nullptr, 0);
+                    LOG2<WARNING>() << "Error on network completion queue: " << fi_cq_strerror(cq, err_entry.prov_errno, err_entry.err_data, nullptr, 0);
                     return ret;
                 }
             }
