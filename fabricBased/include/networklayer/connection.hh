@@ -87,6 +87,7 @@ namespace cse498 {
                     exit(1);
                 }
                 fi_close(&pep->fid);
+
                 info = entry.info;
                 DO_LOG(TRACE) << "Connection request received";
 
@@ -124,6 +125,7 @@ namespace cse498 {
          * @param port the port to connect on. Defaults to 8080
          **/
         Connection(const int port = 8080) : Connection(nullptr, true, port) {}
+
 
         /**
          * Creates the client side of the connection, blocking until completion. If there is no
@@ -242,6 +244,33 @@ namespace cse498 {
             }
             ++msg_sends;
             return ERRREPORT(fi_send(ep, buf, size, nullptr, 0, nullptr));
+        }
+
+        /**
+         * This adds a message to the queue to be sent. It does not block. You cannot
+         * touch the data buffer until after wait_for_sends or wait_send is called,
+         * otherwise it may send the modified data buffer which is very bad (you should
+         * call one of those also before the program completes otherwise messages from
+         * async_send may not have been sent).
+         *
+         * @param data The data to send
+         * @param size The size of the data
+         **/
+        inline bool try_send(const char *data, const size_t size) {
+            if (size > MAX_MSG_SIZE) {
+                LOG2<ERROR>() << "Too large of a message!";
+                exit(1); // Exit for now to avoid possible infinite loops
+            }
+
+            ++msg_sends;
+            bool b = ERRREPORT(fi_send(ep, data, size, nullptr, 0, nullptr));
+            if (b) {
+                wait_for_sends();
+                LOG2<TRACE>() << "Message sent";
+                return true;
+            }
+            LOG2<TRACE>() << "Message send failed";
+            return false;
         }
 
         /**
@@ -395,6 +424,24 @@ namespace cse498 {
             SAFE_CALL(fi_write(ep, buf, size, nullptr, 0, addr, key, nullptr));
             DO_LOG(DEBUG3) << "Write " << key << "-" << addr << " sent";
             SAFE_CALL(wait_for_completion(tx_cq));
+        }
+
+        /**
+         * Write from buf with given size to the addr with the given key
+         * Note addresses start at 0
+         * @param buf
+         * @param size
+         * @param addr
+         * @param key
+         */
+        inline bool try_write(const char *buf, size_t size, uint64_t addr, uint64_t key) {
+            bool b = ERRREPORT(fi_write(ep, buf, size, nullptr, 0, addr, key, nullptr));
+            LOG2<DEBUG3>() << "Write " << key << "-" << addr << " sent";
+            if (b) {
+                SAFE_CALL(wait_for_completion(tx_cq));
+                return true;
+            }
+            return false;
         }
 
         /**
@@ -595,6 +642,7 @@ namespace cse498 {
         }
     };
 
+
     /**
      * Performs best effort broadcast
      * @param clients clients to send to
@@ -686,7 +734,6 @@ namespace cse498 {
             return true;
         }
         return false;
-
     }
 
     /**
