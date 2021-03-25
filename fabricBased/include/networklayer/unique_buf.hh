@@ -1,6 +1,6 @@
-//
-// Created by depaulsmiller on 3/24/21.
-//
+/**
+ * @file
+ */
 
 #ifndef NETWORKLAYER_UNIQUE_BUF_HH
 #define NETWORKLAYER_UNIQUE_BUF_HH
