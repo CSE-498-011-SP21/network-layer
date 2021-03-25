@@ -15,13 +15,13 @@
 #define ERRCHK(x) error_check((x), __FILENAME__, __LINE__);
 
 inline void error_check(int err, std::string file, int line) {
-    if (err) {
+    if (err < 0) {
         DO_LOG(ERROR) << "errno (" << err << "): " << fi_strerror(-err) << " " << file << ":" << line;
         _exit(1);
     }
 }
 
-#define SAFE_CALL(ans) err_negative_check((ans), __FILE__, __LINE__)
+#define SAFE_CALL(ans) err_negative_check((ans), __FILENAME__, __LINE__)
 
 inline int err_negative_check(int err, const char *file, int line, bool abort = true) {
     if (err < 0) {
@@ -31,10 +31,10 @@ inline int err_negative_check(int err, const char *file, int line, bool abort = 
     return err;
 }
 
-#define ERRREPORT(x) error_report((x), __FILE__, __LINE__);
+#define ERRREPORT(x) error_report((x), __FILENAME__, __LINE__);
 
 inline bool error_report(int err, std::string file, int line) {
-    if (err) {
+    if (err < 0) {
         DO_LOG(TRACE) << "errno (" << err << "): " << fi_strerror(-err) << " " << file << ":" << line;
         return false;
     }

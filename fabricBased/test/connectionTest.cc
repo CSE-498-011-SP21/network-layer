@@ -412,6 +412,7 @@ TEST(connectionTest, connection_changing_rma_perms) {
     // Once we update wait_write to return on failure instead of exit we need to re-add this line (with the proper assertion)
     // (I've tried to use ASSERT_EXIT with this but it seems to hang indefinitely, likely since it calls fork which I doubt works well with networking)
     // c2->wait_write(buf, sizeof(uint64_t), 0, 2); // Make sure it can't write on 2
+    ASSERT_FALSE(c2->try_write(buf, sizeof(uint64_t), 0, 2));
 
     c2_done = true;
 

@@ -247,14 +247,12 @@ namespace cse498 {
         }
 
         /**
-         * This adds a message to the queue to be sent. It does not block. You cannot
-         * touch the data buffer until after wait_for_sends or wait_send is called,
-         * otherwise it may send the modified data buffer which is very bad (you should
-         * call one of those also before the program completes otherwise messages from
-         * async_send may not have been sent).
+         * This adds a message to the queue to be sent, blocking until completion. 
          *
          * @param data The data to send
          * @param size The size of the data
+         * 
+         * @return true on success
          **/
         inline bool try_send(const char *data, const size_t size) {
             if (size > MAX_MSG_SIZE) {
@@ -265,12 +263,33 @@ namespace cse498 {
             ++msg_sends;
             bool b = ERRREPORT(fi_send(ep, data, size, nullptr, 0, nullptr));
             if (b) {
-                wait_for_sends();
-                LOG2<TRACE>() << "Message sent";
-                return true;
+                if (try_wait_for_sends()) {
+                    LOG2<TRACE>() << "Message sent";
+                    return true;
+                }
+                return false;
             }
             LOG2<TRACE>() << "Message send failed";
             return false;
+        }
+
+        /**
+         * Ensures all the previous sends were completed. This means after calling this
+         * you can modify the data buffer from async_send.
+         * 
+         * @return true on success
+         **/
+        inline bool try_wait_for_sends() {
+            while (msg_sends > 0) {
+                LOG2<DEBUG3>() << "Waiting for " << msg_sends << " message(s) to send.";
+                int ret = ERRREPORT(wait_for_completion(tx_cq));
+                if (ret >= 0) {
+                    msg_sends -= ret;
+                } else {
+                    return false;
+                }
+            }
+            return true;
         }
 
         /**
@@ -306,10 +325,12 @@ namespace cse498 {
         }
 
         /**
-         * Same as above but nonblocking.
+         * Blocks until it receives a message from the endpoint.
          *
          * @param buf The buffer to store the message data in
          * @param max_len The maximum length of the message (should be <= MAX_MSG_SIZE)
+         * 
+         * @return true on success
          **/
         inline bool try_recv(unique_buf &data, size_t max_len, size_t offset = 0) {
             assert(data.isRegistered());
@@ -317,8 +338,7 @@ namespace cse498 {
             DO_LOG(DEBUG3) << "Receiving up to " << max_len << " bytes";
             bool b = ERRREPORT(fi_recv(ep, data.get() + offset, max_len, data.getDesc(), 0, nullptr));
             if (b) {
-                SAFE_CALL(wait_for_completion(rx_cq));
-                return true;
+                return ERRREPORT(wait_for_completion(rx_cq));
             }
             return false;
         }
@@ -328,8 +348,7 @@ namespace cse498 {
             DO_LOG(DEBUG3) << "Receiving up to " << max_len << " bytes";
             bool b = ERRREPORT(fi_recv(ep, buf, max_len, nullptr, 0, nullptr));
             if (b) {
-                SAFE_CALL(wait_for_completion(rx_cq));
-                return true;
+                return ERRREPORT(wait_for_completion(rx_cq));
             }
             return false;
         }
@@ -427,25 +446,40 @@ namespace cse498 {
         }
 
         /**
-         * Write from buf with given size to the addr with the given key
+         * Write from buf with given size to the addr with the given key. Blocks
+         * until completion. 
          * Note addresses start at 0
-         * @param buf
+         * @param data
          * @param size
          * @param addr
          * @param key
+         * @param offset
+         * 
+         * @return true on success
          */
+        inline bool try_write(unique_buf &data, size_t size, uint64_t addr, uint64_t key, size_t offset = 0) {
+            assert(data.isRegistered());
+
+            auto b = ERRREPORT(fi_write(ep, data.get() + offset, size, data.getDesc(), 0, addr, key, nullptr));
+            if(b){
+                DO_LOG(DEBUG3) << "Write " << key << "-" << addr << " sent";
+                return ERRREPORT(wait_for_completion(tx_cq));
+            }
+            return false;
+        }
+
+        [[deprecated("Use with unique_buf instead")]]
         inline bool try_write(const char *buf, size_t size, uint64_t addr, uint64_t key) {
             bool b = ERRREPORT(fi_write(ep, buf, size, nullptr, 0, addr, key, nullptr));
             LOG2<DEBUG3>() << "Write " << key << "-" << addr << " sent";
             if (b) {
-                SAFE_CALL(wait_for_completion(tx_cq));
-                return true;
+                return ERRREPORT(wait_for_completion(tx_cq));
             }
             return false;
         }
 
         /**
-         * Read size bytes from the addr with the given key into buf
+         * Read size bytes from the addr with the given key into buf. 
          * @param buf
          * @param size
          * @param addr
@@ -468,11 +502,14 @@ namespace cse498 {
 
 
         /**
-         * Same as above but nonblocking
+         * Read size bytes from the addr with the given key into buf. Blocks
+         * until completion. 
          * @param buf
          * @param size
          * @param addr
          * @param key
+         * 
+         * @return true on success
          */
         inline bool try_read(unique_buf &data, size_t size, uint64_t addr, uint64_t key, size_t offset = 0) {
             assert(data.isRegistered());
@@ -481,8 +518,7 @@ namespace cse498 {
             DO_LOG(DEBUG3) << "Read " << key << "-" << addr << " sent";
             bool b = ERRREPORT(fi_read(ep, data.get() + offset, size, data.getDesc(), 0, addr, key, nullptr));
             if (b) {
-                SAFE_CALL(wait_for_completion(tx_cq));
-                return true;
+                return ERRREPORT(wait_for_completion(tx_cq));
             }
             return false;
         }
@@ -493,8 +529,7 @@ namespace cse498 {
             DO_LOG(DEBUG3) << "Read " << key << "-" << addr << " sent";
             bool b = ERRREPORT(fi_read(ep, buf, size, nullptr, 0, addr, key, nullptr));
             if (b) {
-                SAFE_CALL(wait_for_completion(tx_cq));
-                return true;
+                return ERRREPORT(wait_for_completion(tx_cq));
             }
             return false;
         }
