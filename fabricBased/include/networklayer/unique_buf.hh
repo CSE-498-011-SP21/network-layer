@@ -22,7 +22,7 @@ namespace cse498 {
         /**
          * Allocate buffer
          */
-        unique_buf() : buf(new char[4096]) {}
+        unique_buf() : buf(new char[4096]), s_(4096) {}
 
         /**
          * Allocate buffer of size s
@@ -150,7 +150,7 @@ namespace cse498 {
 
     private:
         char *buf;
-        const size_t s_ = 4096;
+        const size_t s_;
         bool registered = false;
         uint64_t key_;
         void *desc = nullptr;
