@@ -46,7 +46,10 @@ To build in docker generate a public/private keypair using ssh-keygen and specif
 output file as docker\_rsa. Register this pair with github.
 Then use docker build to build the container.
 
-## Notes
+## Important Notes
 
-Broadcast primitives on connectionless clients and servers can be used in conjunction with
+- Broadcast primitives on connectionless clients and servers can be used in conjunction with
 send, recv, etc.
+- Sockets provider type appears to work with an offset as the remote address and ignores the 
+desire to use a virtual address, while verbs does use a virtual address. These have to be exchanged
+between servers.
