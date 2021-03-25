@@ -13,35 +13,75 @@
 
 namespace cse498 {
 
+    /**
+     * Unique buffer; uses the semantics of unique_ptr<char[]>
+     */
     class unique_buf {
     public:
+
+        /**
+         * Allocate buffer
+         */
         unique_buf() : buf(new char[4096]) {}
 
-        unique_buf(const unique_buf&) = delete;
+        /**
+         * Allocate buffer of size s
+         * @param s size
+         */
+        explicit unique_buf(size_t s) : buf(new char[s]), s_(s) {}
 
-        unique_buf(unique_buf&& other) = default;
+        unique_buf(const unique_buf &) = delete;
+
+        unique_buf(unique_buf &&other) = default;
 
         ~unique_buf() {
             delete[] buf;
         }
 
+        /**
+         * Index into buffer
+         * @param idx
+         * @return
+         */
         inline char &operator[](size_t idx) {
             return buf[idx];
         }
 
+        /**
+         * Index into buffer
+         * @param idx
+         * @return
+         */
         inline const char &operator[](size_t idx) const {
             return buf[idx];
         }
 
+        /**
+         * Copy to buffer
+         * @param input
+         * @param s
+         * @param offset
+         */
         inline void cpyTo(const char *input, size_t s, size_t offset = 0) {
             memcpy(buf + offset, input, s);
         }
 
+        /**
+         * Copy from buffer
+         * @param output
+         * @param s
+         * @param offset
+         */
         inline void cpyFrom(char *output, size_t s, size_t offset = 0) const {
             memcpy(output, buf + offset, s);
         }
 
-        inline unique_buf& operator=(const std::string& s){
+        /**
+         * Set buffer starting at an offset of 0 with a string.
+         * @param s
+         * @return
+         */
+        inline unique_buf &operator=(const std::string &s) {
             memcpy(buf, s.c_str(), s.size() + 1);
             return *this;
         }
@@ -64,26 +104,47 @@ namespace cse498 {
             return buf;
         }
 
-        inline void registerMemoryCallback(uint64_t key, void* d) {
+        /**
+         * Callback for when memory is registered
+         * @param key
+         * @param d
+         */
+        inline void registerMemoryCallback(uint64_t key, void *d) {
             registered = true;
             key_ = key;
             desc = d;
         }
 
+        /**
+         * Key associated with buffer
+         * @return
+         */
         [[nodiscard]] inline uint64_t key() const {
             assert(registered);
             return key_;
         }
 
+        /**
+         * Size of buffer
+         * @return
+         */
         [[nodiscard]] inline size_t size() const {
             return s_;
         }
 
-        [[nodiscard]] inline void* getDesc() {
+        /**
+         * Descriptor for buffer
+         * @return
+         */
+        [[nodiscard]] inline void *getDesc() {
             return desc;
         }
 
-        [[nodiscard]] inline bool isRegistered() const{
+        /**
+         * Returns if the buffer has been registered
+         * @return
+         */
+        [[nodiscard]] inline bool isRegistered() const {
             return registered;
         }
 
@@ -92,7 +153,7 @@ namespace cse498 {
         const size_t s_ = 4096;
         bool registered = false;
         uint64_t key_;
-        void* desc = nullptr;
+        void *desc = nullptr;
     };
 
 }
