@@ -12,14 +12,16 @@ TEST(connectionTest, connection_async_send_recv) {
 
     auto f = std::async([&msg]() {
         // c1 stuff
-        cse498::Connection *c1 = new cse498::Connection("127.0.0.1", false);
+        auto *c1 = new cse498::Connection("127.0.0.1", false);
+        ASSERT_TRUE(c1->connect());
         c1->async_send(msg.c_str(), msg.length() + 1);
         c1->wait_for_sends();
         delete c1;
     });
 
     // c2 stuff
-    cse498::Connection *c2 = new cse498::Connection("127.0.0.1", true);
+    auto *c2 = new cse498::Connection("127.0.0.1", true);
+    ASSERT_TRUE(c2->connect());
 
     char *buf = new char[128];
     c2->wait_recv(buf, 128);
@@ -33,14 +35,17 @@ TEST(connectionTest, connection_try_recv) {
 
     auto f = std::async([&msg]() {
         // c1 stuff
-        cse498::Connection *c1 = new cse498::Connection("127.0.0.1", false);
+        auto *c1 = new cse498::Connection("127.0.0.1", false);
+        ASSERT_TRUE(c1->connect());
+
         while(!c1->try_send(msg.c_str(), msg.length() + 1))
         //c1->async_send(msg.c_str(), msg.length() + 1);
         //c1->wait_for_sends();
         delete c1;
     });
 
-    cse498::Connection *c2 = new cse498::Connection("127.0.0.1", true);
+    auto *c2 = new cse498::Connection("127.0.0.1", true);
+    ASSERT_TRUE(c2->connect());
 
     char *buf = new char[128];
     while (!c2->try_recv(buf, 128));
@@ -57,7 +62,9 @@ TEST(connectionTest, connection_wait_send_recv_response) {
         // c1 stuff
         const char *addr = "127.0.0.1";
 
-        cse498::Connection *c1 = new cse498::Connection(addr, true);
+        auto *c1 = new cse498::Connection(addr, true);
+        ASSERT_TRUE(c1->connect());
+
         c1->wait_send(msg.c_str(), msg.length() + 1);
 
         char *buf = new char[128];
@@ -68,7 +75,8 @@ TEST(connectionTest, connection_wait_send_recv_response) {
 
     // c2 stuff
 
-    cse498::Connection *c2 = new cse498::Connection("127.0.0.1", false);
+    auto *c2 = new cse498::Connection("127.0.0.1", false);
+    ASSERT_TRUE(c2->connect());
 
     char *buf = new char[128];
     c2->wait_recv(buf, 128);
@@ -89,10 +97,12 @@ TEST(connectionTest, connection_send_recv_multiple_connections) {
         const char *addr = "127.0.0.1";
 
         // c1's connection to c0
-        cse498::Connection *c0_c1 = new cse498::Connection(addr, true);
-        // c2's connection to c0
-        cse498::Connection *c0_c2 = new cse498::Connection(addr, true);
+        auto *c0_c1 = new cse498::Connection(addr, true);
+        ASSERT_TRUE(c0_c1->connect());
 
+        // c2's connection to c0
+        auto *c0_c2 = new cse498::Connection(addr, true);
+        ASSERT_TRUE(c0_c2->connect());
 
         c0_c1->async_send(c0_to_c1_msg.c_str(), c0_to_c1_msg.length() + 1);
         c0_c2->async_send(c0_to_c2_msg.c_str(), c0_to_c2_msg.length() + 1);
@@ -103,7 +113,8 @@ TEST(connectionTest, connection_send_recv_multiple_connections) {
 
     auto f2 = std::async([&c0_to_c1_msg, &c1_connected]() {
         // c1 stuff
-        cse498::Connection *c1 = new cse498::Connection("127.0.0.1", false);
+        auto *c1 = new cse498::Connection("127.0.0.1", false);
+        ASSERT_TRUE(c1->connect());
 
         c1_connected = true;
 
@@ -115,7 +126,8 @@ TEST(connectionTest, connection_send_recv_multiple_connections) {
 
     while (!c1_connected);
     // c2 stuff
-    cse498::Connection *c2 = new cse498::Connection("127.0.0.1", false);
+    auto *c2 = new cse498::Connection("127.0.0.1", false);
+    ASSERT_TRUE(c2->connect());
 
     char *buf = new char[128];
     c2->wait_recv(buf, 128);
@@ -132,6 +144,7 @@ TEST(connectionTest, connection_broadcast) {
     auto f = std::async([&msg, &resp]() {
         const char *addr = "127.0.0.1";
         cse498::Connection c1 = cse498::Connection(addr, false);
+        ASSERT_TRUE(c1.connect());
 
         std::vector<cse498::Connection> v;
         v.push_back(std::move(c1));
@@ -143,7 +156,8 @@ TEST(connectionTest, connection_broadcast) {
         ASSERT_STREQ(resp.c_str(), buf);
     });
 
-    cse498::Connection *c2 = new cse498::Connection("127.0.0.1", true);
+    auto *c2 = new cse498::Connection("127.0.0.1", true);
+    ASSERT_TRUE(c2->connect());
 
     char *buf2 = new char[4096];
     std::vector<cse498::Connection> v;
@@ -169,7 +183,8 @@ TEST(connectionTest, connection_rma) {
     auto f = std::async([&done, &latch, &remoteAccess]() {
         // c1 stuff
         const char *addr = "127.0.0.1";
-        cse498::Connection *c1 = new cse498::Connection(addr, true);
+        auto *c1 = new cse498::Connection(addr, true);
+        ASSERT_TRUE(c1->connect());
 
         *((uint64_t *) remoteAccess) = ~0;
         c1->register_mr((char *) remoteAccess, sizeof(uint64_t), FI_WRITE | FI_REMOTE_WRITE | FI_READ | FI_REMOTE_READ,
@@ -183,8 +198,8 @@ TEST(connectionTest, connection_rma) {
     });
 
     // c2 stuff
-
-    cse498::Connection *c2 = new cse498::Connection("127.0.0.1", false);
+    auto *c2 = new cse498::Connection("127.0.0.1", false);
+    ASSERT_TRUE(c2->connect());
 
     char *buf = new char[sizeof(uint64_t)];
     *((uint64_t *) buf) = 10;
@@ -215,7 +230,8 @@ TEST(connectionTest, connection_rma_try_read) {
     auto f = std::async([&done, &latch, &remoteAccess]() {
         // c1 stuff
         const char *addr = "127.0.0.1";
-        cse498::Connection *c1 = new cse498::Connection(addr, true);
+        auto *c1 = new cse498::Connection(addr, true);
+        ASSERT_TRUE(c1->connect());
 
         *((uint64_t *) remoteAccess) = ~0;
         c1->register_mr((char *) remoteAccess, sizeof(uint64_t), FI_WRITE | FI_REMOTE_WRITE | FI_READ | FI_REMOTE_READ,
@@ -228,18 +244,17 @@ TEST(connectionTest, connection_rma_try_read) {
         delete c1;
     });
 
-    cse498::Connection *c2 = new cse498::Connection("127.0.0.1", false);
+    auto *c2 = new cse498::Connection("127.0.0.1", false);
+    ASSERT_TRUE(c2->connect());
     char *buf = new char[sizeof(uint64_t)];
     *((uint64_t *) buf) = 10;
     while (!latch);
     while (!c2->try_read(buf, sizeof(uint64_t), 0, 1));
-    //c2->wait_read(buf, sizeof(uint64_t), 0, 1);
     std::cerr << "Read: " << *(uint64_t *) buf << std::endl;
     ASSERT_TRUE(*((uint64_t *) buf) == ~0);
 
     *((uint64_t *) buf) = 0;
-    while(!c2->try_write(buf, sizeof(uint64_t), 0, 1))
-    c2->wait_write(buf, sizeof(uint64_t), 0, 1);
+    while(!c2->try_write(buf, sizeof(uint64_t), 0, 1));
     done = true;
     f.get();
 
@@ -274,9 +289,11 @@ TEST(connectionTest, connection_changing_rma_perms) {
         *((uint64_t *) remoteAccess2) = 5;
 
         // c1's connection to c0
-        cse498::Connection *c0_c1 = new cse498::Connection(addr, true);
+        auto *c0_c1 = new cse498::Connection(addr, true);
+        ASSERT_TRUE(c0_c1->connect());
         // c2's connection to c0
-        cse498::Connection *c0_c2 = new cse498::Connection(addr, true);
+        auto *c0_c2 = new cse498::Connection(addr, true);
+        ASSERT_TRUE(c0_c2->connect());
         ASSERT_EQ(false, c0_c1->register_mr((char *) remoteAccess, sizeof(uint64_t),
                                             FI_WRITE | FI_REMOTE_WRITE | FI_READ | FI_REMOTE_READ, 1));
         ASSERT_EQ(false, c0_c2->register_mr((char *) remoteAccess, sizeof(uint64_t),
@@ -305,20 +322,21 @@ TEST(connectionTest, connection_changing_rma_perms) {
 
     auto f2 = std::async([&c1_connected, &mr_registered, &mr2_wrote, &perms_updated, &c1_done, &c0_done]() {
         // c1 stuff
-        cse498::Connection *c1 = new cse498::Connection("127.0.0.1", false);
+        auto *c1 = new cse498::Connection("127.0.0.1", false);
+        ASSERT_TRUE(c1->connect());
         c1_connected = true;
         char *buf = new char[sizeof(uint64_t)];
 
         while (!mr_registered);
 
         *((uint64_t *) buf) = 100;
-        c1->wait_write(buf, sizeof(uint64_t), 0, 2);
+        ASSERT_TRUE(c1->try_write(buf, sizeof(uint64_t), 0, 2));
         mr2_wrote = true;
 
         while (!perms_updated);
 
         *((uint64_t *) buf) = 1000;
-        c1->wait_write(buf, sizeof(uint64_t), 0, 2); // Make sure it can still write on 2
+        ASSERT_TRUE(c1->try_write(buf, sizeof(uint64_t), 0, 2)); // Make sure it can still write on 2
 
         c1_done = true;
         while (!c0_done);
@@ -329,27 +347,24 @@ TEST(connectionTest, connection_changing_rma_perms) {
     while (!c1_connected);
     // c2 stuff
 
-    cse498::Connection *c2 = new cse498::Connection("127.0.0.1", false);
+    auto *c2 = new cse498::Connection("127.0.0.1", false);
+    ASSERT_TRUE(c2->connect());
     char *buf = new char[sizeof(uint64_t)];
     while (!mr_registered);
     *((uint64_t *) buf) = 10;
-    c2->wait_write(buf, sizeof(uint64_t), 0, 1);
+    ASSERT_TRUE(c2->try_write(buf, sizeof(uint64_t), 0, 1));
     mr1_wrote = true;
 
     while (!c1_done);
 
-    c2->wait_read(buf, sizeof(uint64_t), 0, 2); // Make sure it still has read access. 
+    ASSERT_TRUE(c2->try_read(buf, sizeof(uint64_t), 0, 2)); // Make sure it still has read access. 
     ASSERT_EQ(1000, *((uint64_t *) buf));
 
     *((uint64_t *) buf) = 10000;
-    c2->wait_write(buf, sizeof(uint64_t), 0, 1); // Make sure it can still write on 1. 
+    ASSERT_TRUE(c2->try_write(buf, sizeof(uint64_t), 0, 1)); // Make sure it can still write on 1. 
 
     *((uint64_t *) buf) = 100000;
-
-    // TODO this next line currently causes the program to exit which makes the test fail. (even though exiting means it passed)
-    // Once we update wait_write to return on failure instead of exit we need to re-add this line (with the proper assertion)
-    // (I've tried to use ASSERT_EXIT with this but it seems to hang indefinitely, likely since it calls fork which I doubt works well with networking)
-    // c2->wait_write(buf, sizeof(uint64_t), 0, 2); // Make sure it can't write on 2
+    ASSERT_FALSE(c2->try_write(buf, sizeof(uint64_t), 0, 2));
 
     c2_done = true;
 
@@ -358,4 +373,3 @@ TEST(connectionTest, connection_changing_rma_perms) {
 
     delete c2;
 }
-

@@ -22,7 +22,7 @@
 
 inline int callCheck(int err, const char *file, int line, bool abort = true) {
     if (err < 0) {
-        DO_LOG(ERROR) << "ERROR (" << err << "): " << fi_strerror(-err) << " " << file << ":" << line;
+        LOG2<ERROR>() << "ERROR (" << err << "): " << fi_strerror(-err) << " " << file << ":" << line;
         exit(1);
     }
     return err;
@@ -31,11 +31,21 @@ inline int callCheck(int err, const char *file, int line, bool abort = true) {
 #define ERRREPORT2(x) error_report2((x), __FILE__, __LINE__);
 
 inline bool error_report2(int err, std::string file, int line) {
-    if (err) {
-        LOG2<TRACE>() << "ERROR (" << err << "): " << fi_strerror(-err) << " " << file << ":" << line;
+    if (err < 0) {
+        LOG2<WARNING>() << "ERROR (" << err << "): " << fi_strerror(-err) << " " << file << ":" << line;
         return false;
     }
     return true;
+}
+
+// This is SAFE_CALL without exiting. 
+#define ERRREPORT3(x) error_report3((x), __FILE__, __LINE__);
+
+inline int error_report3(int err, const std::string& file, int line) {
+    if (err < 0) {
+        LOG2<WARNING>() << "ERROR (" << err << "): " << fi_strerror(-err) << " " << file << ":" << line;
+    }
+    return err;
 }
 
 #define MAJOR_VERSION_USED 1
@@ -55,7 +65,7 @@ namespace cse498 {
     class Connection {
     public:
         /**
-         * Creates one side of the connection (either client or server). Blocks until a connection is established. 
+         * Creates one side of the connection (either client or server). Must call connect to complete the connection
          * The address can be null if this is the server side and it is not connecting to 127.0.0.1 
          * 
          * If you are creating the server side of a connection connecting to 127.0.0.1 then you have to use this constructor. 
@@ -65,6 +75,7 @@ namespace cse498 {
          * @param port Port to connection on. Defaults to 8080
          **/
         Connection(const char *addr, bool is_server, const int port = 8080) {
+            this->is_server = is_server;
             create_hints();
 
             if (is_server) {
@@ -82,42 +93,6 @@ namespace cse498 {
                 LOG2<DEBUG>() << "Using provider: " << info->fabric_attr->prov_name;
 
                 open_eq();
-
-                fid_pep *pep;
-                LOG2<TRACE>() << "Creating passive endpoint";
-                SAFE_CALL(fi_passive_ep(fab, info, &pep, nullptr));
-
-                LOG2<TRACE>() << "Binding eq to pep";
-                SAFE_CALL(fi_pep_bind(pep, &eq->fid, 0));
-                LOG2<TRACE>() << "Transitioning pep to listening state";
-                SAFE_CALL(fi_listen(pep));
-
-
-                uint32_t event;
-                struct fi_eq_cm_entry entry = {};
-                LOG2<TRACE>() << "Waiting for connection request";
-                int rd = SAFE_CALL(fi_eq_sread(eq, &event, &entry, sizeof(entry), -1, 0));
-                // May want to check that the address is correct.
-                if (rd != sizeof(entry)) {
-                    LOG2<ERROR>() << "There was an error reading the connection request.";
-                    exit(1);
-                }
-
-                if (event != FI_CONNREQ) {
-                    LOG2<ERROR>() << "Incorrect event type";
-                    exit(1);
-                }
-                fi_close(&pep->fid);
-
-                info = entry.info;
-                LOG2<TRACE>() << "Connection request received";
-
-                setup_active_ep();
-
-                LOG2<TRACE>() << "Accepting connection request";
-                SAFE_CALL(fi_accept(ep, nullptr, 0));
-
-                wait_for_eq_connected();
             } else {
                 LOG2<DEBUG>() << "Initializing client";
                 SAFE_CALL(fi_getinfo(FI_VERSION(MAJOR_VERSION_USED, MINOR_VERSION_USED), addr,
@@ -130,17 +105,11 @@ namespace cse498 {
                 open_eq();
 
                 setup_active_ep();
-
-                LOG2<TRACE>() << "Sending connection request";
-                while (fi_connect(ep, info->dest_addr, nullptr, 0) < 0);
-                LOG2<TRACE>() << "Connection request sent";
-
-                wait_for_eq_connected();
             }
         }
 
         /**
-         * Creates a server side of the connection. Blocks until completion. 
+         * Creates a server side of the connection. Must call connect to complete the connection.
          * Cannot be used for local connections (there is another constructor for that)
          * 
          * @param port the port to connect on. Defaults to 8080
@@ -149,10 +118,8 @@ namespace cse498 {
 
 
         /**
-         * Creates the client side of the connection, blocking until completion. If there is no
-         * server active while the constructor is called it will continue to try to connect until
-         * the server is found.
-         * 
+         * Creates the client side of the connection. Must call connect to complete the connection.
+         *
          * @param addr the address of the server
          * @param port the port to connect on (default 8080)
          **/
@@ -162,6 +129,7 @@ namespace cse498 {
 
         Connection(Connection &&other) {
             msg_sends = other.msg_sends;
+            is_server = other.is_server;
 
             // These need to be closed by fabric
             hints = other.hints;
@@ -183,7 +151,6 @@ namespace cse498 {
             other.tx_cq = nullptr;
             mrs = other.mrs;
             other.mrs = nullptr;
-
         }
 
         ~Connection() {
@@ -200,6 +167,75 @@ namespace cse498 {
                 for (auto it = mrs->begin(); it != mrs->end(); ++it) {
                     fi_close(&it->second->fid);
                 }
+            }
+        }
+
+        /**
+         * Initializes the connection with the other side of the connection, blocking until completion.
+         * This must be called by both the client and server.
+         *
+         * @return true on success
+         */
+        inline bool connect() {
+            if (is_server) {
+                fid_pep *pep;
+                LOG2<TRACE>() << "Creating passive endpoint";
+                int ret = ERRREPORT3(fi_passive_ep(fab, info, &pep, nullptr));
+                if (ret < 0) { // All these if statements are gross.
+                    return false;
+                }
+
+                LOG2<TRACE>() << "Binding eq to pep";
+                ret = ERRREPORT3(fi_pep_bind(pep, &eq->fid, 0));
+                if (ret < 0) {
+                    return false;
+                }
+
+                LOG2<TRACE>() << "Transitioning pep to listening state";
+                ret = ERRREPORT3(fi_listen(pep));
+                if (ret < 0) {
+                    return false;
+                }
+
+                uint32_t event;
+                struct fi_eq_cm_entry entry = {};
+                LOG2<TRACE>() << "Waiting for connection request";
+                int rd = ERRREPORT3(fi_eq_sread(eq, &event, &entry, sizeof(entry), -1, 0));
+                // May want to check that the address is correct.
+                if (rd != sizeof(entry)) {
+                    LOG2<ERROR>() << "There was an error reading the connection request.";
+                    return false;
+                }
+
+                if (event != FI_CONNREQ) {
+                    LOG2<ERROR>() << "Incorrect event type";
+                    return false;
+                }
+                ret = ERRREPORT3(fi_close(&pep->fid));
+                if (ret < 0) {
+                    return false;
+                }
+
+                info = entry.info;
+                LOG2<TRACE>() << "Connection request received";
+
+                if (!try_setup_active_ep()) {
+                    return false;
+                }
+
+                LOG2<TRACE>() << "Accepting connection request";
+                ret = ERRREPORT3(fi_accept(ep, nullptr, 0));
+                if (ret < 0) {
+                    return false;
+                }
+
+                return wait_for_eq_connected();
+            } else {
+                LOG2<TRACE>() << "Sending connection request";
+                while (fi_connect(ep, info->dest_addr, nullptr, 0) < 0);
+                LOG2<TRACE>() << "Connection request sent";
+
+                return wait_for_eq_connected();
             }
         }
 
@@ -238,14 +274,12 @@ namespace cse498 {
         }
 
         /**
-         * This adds a message to the queue to be sent. It does not block. You cannot
-         * touch the data buffer until after wait_for_sends or wait_send is called,
-         * otherwise it may send the modified data buffer which is very bad (you should
-         * call one of those also before the program completes otherwise messages from
-         * async_send may not have been sent).
+         * This adds a message to the queue to be sent, blocking until completion. 
          *
          * @param data The data to send
          * @param size The size of the data
+         * 
+         * @return true on success
          **/
         inline bool try_send(const char *data, const size_t size) {
             if (size > MAX_MSG_SIZE) {
@@ -256,12 +290,33 @@ namespace cse498 {
             ++msg_sends;
             bool b = ERRREPORT2(fi_send(ep, data, size, nullptr, 0, nullptr));
             if (b) {
-                wait_for_sends();
-                LOG2<TRACE>() << "Message sent";
-                return true;
+                if (try_wait_for_sends()) {
+                    LOG2<TRACE>() << "Message sent";
+                    return true;
+                }
+                return false;
             }
             LOG2<TRACE>() << "Message send failed";
             return false;
+        }
+
+        /**
+         * Ensures all the previous sends were completed. This means after calling this
+         * you can modify the data buffer from async_send.
+         * 
+         * @return true on success
+         **/
+        inline bool try_wait_for_sends() {
+            while (msg_sends > 0) {
+                LOG2<DEBUG3>() << "Waiting for " << msg_sends << " message(s) to send.";
+                int ret = ERRREPORT3(wait_for_completion(tx_cq));
+                if (ret >= 0) {
+                    msg_sends -= ret;
+                } else {
+                    return false;
+                }
+            }
+            return true;
         }
 
         /**
@@ -288,17 +343,18 @@ namespace cse498 {
         }
 
         /**
-         * Same as above but nonblocking.
+         * Blocks until it receives a message from the endpoint.
          *
          * @param buf The buffer to store the message data in
          * @param max_len The maximum length of the message (should be <= MAX_MSG_SIZE)
+         * 
+         * @return true on success
          **/
         inline bool try_recv(char *buf, size_t max_len) {
             LOG2<DEBUG3>() << "Receiving up to " << max_len << " bytes";
             bool b = ERRREPORT2(fi_recv(ep, buf, max_len, nullptr, 0, nullptr));
             if (b) {
-                SAFE_CALL(wait_for_completion(rx_cq));
-                return true;
+                return ERRREPORT2(wait_for_completion(rx_cq));
             }
             return false;
         }
@@ -343,25 +399,27 @@ namespace cse498 {
         }
 
         /**
-         * Write from buf with given size to the addr with the given key
+         * Write from buf with given size to the addr with the given key. Blocks
+         * until completion. 
          * Note addresses start at 0
          * @param buf
          * @param size
          * @param addr
          * @param key
+         * 
+         * @return true on success
          */
         inline bool try_write(const char *buf, size_t size, uint64_t addr, uint64_t key) {
             bool b = ERRREPORT2(fi_write(ep, buf, size, nullptr, 0, addr, key, nullptr));
             LOG2<DEBUG3>() << "Write " << key << "-" << addr << " sent";
             if (b) {
-                SAFE_CALL(wait_for_completion(tx_cq));
-                return true;
+                return ERRREPORT2(wait_for_completion(tx_cq));
             }
             return false;
         }
 
         /**
-         * Read size bytes from the addr with the given key into buf
+         * Read size bytes from the addr with the given key into buf. 
          * @param buf
          * @param size
          * @param addr
@@ -374,19 +432,20 @@ namespace cse498 {
         }
 
         /**
-         * Same as above but nonblocking
+         * Read size bytes from the addr with the given key into buf. Blocks
+         * until completion. 
          * @param buf
          * @param size
          * @param addr
          * @param key
+         * 
+         * @return true on success
          */
         inline bool try_read(char *buf, size_t size, uint64_t addr, uint64_t key) {
-            //SAFE_CALL(fi_read(ep, buf, size, nullptr, 0, addr, key, nullptr));
             LOG2<DEBUG3>() << "Read " << key << "-" << addr << " sent";
             bool b = ERRREPORT2(fi_read(ep, buf, size, nullptr, 0, addr, key, nullptr));
             if (b) {
-                SAFE_CALL(wait_for_completion(tx_cq));
-                return true;
+                return ERRREPORT2(wait_for_completion(tx_cq));
             }
             return false;
         }
@@ -398,6 +457,7 @@ namespace cse498 {
         }*/
 
     private:
+        bool is_server;
         const size_t MAX_MSG_SIZE = 4096;
         uint64_t msg_sends = 0;
 
@@ -428,7 +488,7 @@ namespace cse498 {
                     // New error on queue
                     struct fi_cq_err_entry err_entry;
                     fi_cq_readerr(cq, &err_entry, 0);
-                    LOG2<ERROR>() << fi_cq_strerror(cq, err_entry.prov_errno, err_entry.err_data, nullptr, 0);
+                    LOG2<WARNING>() << "Error on network completion queue: " << fi_cq_strerror(cq, err_entry.prov_errno, err_entry.err_data, nullptr, 0);
                     return ret;
                 }
             }
@@ -491,17 +551,56 @@ namespace cse498 {
 
         /**
          * Performs a blocking read of the event queue until an FI_CONNECTED event is triggered.
+         *
+         * @return true on success
          **/
-        inline void wait_for_eq_connected() {
-            struct fi_eq_cm_entry entry;
+        inline bool wait_for_eq_connected() {
+            struct fi_eq_cm_entry entry{};
             uint32_t event;
             LOG2<TRACE>() << "Reading eq for FI_CONNECTED event";
-            int addr_len = SAFE_CALL(fi_eq_sread(eq, &event, &entry, sizeof(entry), -1, 0));
-            if (event != FI_CONNECTED) {
+            int addr_len = ERRREPORT3(fi_eq_sread(eq, &event, &entry, sizeof(entry), -1, 0));
+            if (event != FI_CONNECTED || addr_len < 0) {
                 LOG2<ERROR>() << "Not a connected event";
-                exit(1);
+                return false;
             }
             LOG2<DEBUG>() << "Connected";
+            return true;
+        }
+
+        /**
+         * Creates the domain, endpoint, counters, binds the event queue, and enables the ep.
+         *
+         * Requires fab, info to be set.
+         *
+         * @return true on success
+         **/
+        inline bool try_setup_active_ep() {
+            LOG2<TRACE>() << "Creating domain";
+            int ret = ERRREPORT3(fi_domain(fab, info, &domain, nullptr));
+            if (ret < 0) {
+                return false;
+            }
+
+            LOG2<TRACE>() << "Creating active endpoint";
+            ret = ERRREPORT3(fi_endpoint(domain, info, &ep, nullptr));
+            if (ret < 0) {
+                return false;
+            }
+
+            setup_cqs();
+
+            LOG2<TRACE>() << "Binding eq to pep";
+            ret = ERRREPORT3(fi_ep_bind(ep, &eq->fid, 0));
+            if (ret < 0) {
+                return false;
+            }
+
+            LOG2<TRACE>() << "Enabling endpoint";
+            ret = ERRREPORT3(fi_enable(ep));
+            if (ret < 0) {
+                return false;
+            }
+            return true;
         }
 
         /**
