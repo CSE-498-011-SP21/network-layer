@@ -17,7 +17,7 @@ int main(int argc, char **argv) {
         addr = argv[1];
     }
 
-    auto *c1 = new cse498::Connection(addr, true, 8080, FI_PROTO_RDMA_CM_IB_RC);
+    auto *c1 = new cse498::Connection(addr, true, 8080, cse498::Verbs);
 
     *((uint64_t *) remoteAccess.get()) = ~0;
     uint64_t key = 1;

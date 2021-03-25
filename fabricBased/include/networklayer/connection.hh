@@ -23,6 +23,21 @@ static_assert(FI_MAJOR_VERSION == MAJOR_VERSION_USED && FI_MINOR_VERSION >= MINO
 #endif
 
 namespace cse498 {
+
+    enum ProviderType {
+        Verbs,
+        Sockets
+    };
+
+    inline uint32_t providerToProtocol(ProviderType provider) {
+        switch (provider) {
+            case Verbs:
+                return FI_PROTO_RDMA_CM_IB_RC;
+            case Sockets:
+                return FI_PROTO_SOCK_TCP;
+        }
+    }
+
     /**
      * A basic wrapper around fabric connected communications. Can currently send and receive messages.
      **/
@@ -38,7 +53,7 @@ namespace cse498 {
          * @param is_server Whether this machine is the server (doesn't matter which one in a connection is the server as long as one is)
          * @param port Port to connection on. Defaults to 8080
          **/
-        Connection(const char *addr, bool is_server, const int port = 8080, uint32_t protocol = FI_PROTO_SOCK_TCP) {
+        Connection(const char *addr, bool is_server, const int port = 8080, ProviderType provider = Sockets) {
             hints = nullptr;
             info = nullptr;
             fab = nullptr;
@@ -50,7 +65,7 @@ namespace cse498 {
             pep = nullptr;
             this->is_server = is_server;
 
-            create_hints(protocol);
+            create_hints(providerToProtocol(provider));
 
             if (is_server) {
                 DO_LOG(DEBUG) << "Initializing passive connection";
