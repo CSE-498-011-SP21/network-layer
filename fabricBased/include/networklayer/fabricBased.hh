@@ -88,6 +88,7 @@ namespace cse498 {
     /**
      * FabricRPC class. Currently a connectionless server.
      */
+
     class FabricRPC final : public RPC {
     public:
         /**
@@ -250,7 +251,7 @@ namespace cse498 {
         char *local_buf;
         char *remote_buf;
         std::atomic_bool done;
-    };
+    } __attribute_deprecated__;
 
     /**
      * RPC client using libfabric
@@ -390,5 +391,5 @@ namespace cse498 {
         char *local_buf;
         char *remote_buf;
 
-    };
+    } __attribute_deprecated__;
 }

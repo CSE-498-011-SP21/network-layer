@@ -29,7 +29,7 @@ namespace cse498 {
     class Connection {
     public:
         /**
-         * Creates one side of the connection (either client or server). Blocks until a connection is established. 
+         * Creates one side of the connection (either client or server). Must call connect to complete the connection
          * The address can be null if this is the server side and it is not connecting to 127.0.0.1 
          * 
          * If you are creating the server side of a connection connecting to 127.0.0.1 then you have to use this constructor. 
@@ -39,7 +39,7 @@ namespace cse498 {
          * @param port Port to connection on. Defaults to 8080
          **/
         Connection(const char *addr, bool is_server, const int port = 8080, uint32_t protocol = FI_PROTO_SOCK_TCP) {
-            hints = nullptr; 
+            hints = nullptr;
             info = nullptr;
             fab = nullptr;
             domain = nullptr;
@@ -47,6 +47,8 @@ namespace cse498 {
             ep = nullptr;
             rx_cq = nullptr;
             tx_cq = nullptr;
+            pep = nullptr;
+            this->is_server = is_server;
 
             create_hints(protocol);
 
@@ -61,42 +63,6 @@ namespace cse498 {
                 DO_LOG(DEBUG) << "Using provider: " << info->fabric_attr->prov_name;
 
                 open_eq();
-
-                fid_pep *pep;
-                DO_LOG(TRACE) << "Creating passive endpoint";
-                SAFE_CALL(fi_passive_ep(fab, info, &pep, nullptr));
-
-                DO_LOG(TRACE) << "Binding eq to pep";
-                SAFE_CALL(fi_pep_bind(pep, &eq->fid, 0));
-                DO_LOG(TRACE) << "Transitioning pep to listening state";
-                SAFE_CALL(fi_listen(pep));
-
-
-                uint32_t event;
-                struct fi_eq_cm_entry entry = {};
-                DO_LOG(TRACE) << "Waiting for connection request";
-                int rd = SAFE_CALL(fi_eq_sread(eq, &event, &entry, sizeof(entry), -1, 0));
-                // May want to check that the address is correct.
-                if (rd != sizeof(entry)) {
-                    DO_LOG(ERROR) << "There was an error reading the connection request.";
-                    exit(1);
-                }
-
-                if (event != FI_CONNREQ) {
-                    DO_LOG(ERROR) << "Incorrect event type";
-                    exit(1);
-                }
-                fi_close(&pep->fid);
-
-                info = entry.info;
-                DO_LOG(TRACE) << "Connection request received";
-
-                setup_active_ep();
-
-                DO_LOG(TRACE) << "Accepting connection request";
-                SAFE_CALL(fi_accept(ep, nullptr, 0));
-
-                wait_for_eq_connected();
             } else {
                 DO_LOG(DEBUG) << "Initializing client";
                 SAFE_CALL(fi_getinfo(FI_VERSION(MAJOR_VERSION_USED, MINOR_VERSION_USED), addr,
@@ -109,17 +75,11 @@ namespace cse498 {
                 open_eq();
 
                 setup_active_ep();
-
-                DO_LOG(TRACE) << "Sending connection request";
-                while (fi_connect(ep, info->dest_addr, nullptr, 0) < 0);
-                DO_LOG(TRACE) << "Connection request sent";
-
-                wait_for_eq_connected();
             }
         }
 
         /**
-         * Creates a server side of the connection. Blocks until completion. 
+         * Creates a server side of the connection. Must call connect to complete the connection.
          * Cannot be used for local connections (there is another constructor for that)
          * 
          * @param port the port to connect on. Defaults to 8080
@@ -128,10 +88,8 @@ namespace cse498 {
 
 
         /**
-         * Creates the client side of the connection, blocking until completion. If there is no
-         * server active while the constructor is called it will continue to try to connect until
-         * the server is found.
-         * 
+         * Creates the client side of the connection. Must call connect to complete the connection.
+         *
          * @param addr the address of the server
          * @param port the port to connect on (default 8080)
          **/
@@ -141,6 +99,7 @@ namespace cse498 {
 
         Connection(Connection &&other) {
             msg_sends = other.msg_sends;
+            is_server = other.is_server;
 
             // These need to be closed by fabric
             hints = other.hints;
@@ -149,6 +108,8 @@ namespace cse498 {
             other.info = nullptr;
             fab = other.fab;
             other.fab = nullptr;
+            pep = other.pep;
+            other.pep = nullptr;
 
             domain = other.domain;
             other.domain = nullptr;
@@ -162,7 +123,6 @@ namespace cse498 {
             other.tx_cq = nullptr;
             mrs = other.mrs;
             other.mrs = nullptr;
-
         }
 
         ~Connection() {
@@ -179,6 +139,59 @@ namespace cse498 {
                 for (auto it = mrs->begin(); it != mrs->end(); ++it) {
                     fi_close(&it->second->fid);
                 }
+            }
+        }
+
+        /**
+         * Initializes the connection with the other side of the connection, blocking until completion.
+         * This must be called by both the client and server.
+         *
+         * @return true on success
+         */
+        inline bool connect() {
+            if (is_server) {
+
+                createPep();
+
+                uint32_t event = 0;
+                struct fi_eq_cm_entry entry = {};
+                DO_LOG(TRACE) << "Waiting for connection request";
+                bool ret = ERRREPORT(fi_eq_sread(eq, &event, &entry, sizeof(entry), -1, 0));
+                // May want to check that the address is correct.
+                if (!ret) {
+                    DO_LOG(ERROR) << "There was an error reading the connection request.";
+                    ERRREPORT(fi_close(&pep->fid));
+                    return false;
+                }
+
+                if (event != FI_CONNREQ) {
+                    DO_LOG(ERROR) << "Incorrect event type";
+                    ERRREPORT(fi_close(&pep->fid));
+                    return false;
+                }
+
+                info = entry.info;
+                DO_LOG(TRACE) << "Connection request received";
+
+                if (!try_setup_active_ep()) {
+                    ERRREPORT(fi_close(&pep->fid));
+                    return false;
+                }
+
+                ERRREPORT(fi_close(&pep->fid));
+                DO_LOG(TRACE) << "Accepting connection request";
+                ret = ERRREPORT(fi_accept(ep, nullptr, 0));
+                if (!ret) {
+                    return false;
+                }
+
+                return wait_for_eq_connected();
+            } else {
+                DO_LOG(TRACE) << "Sending connection request";
+                while (fi_connect(ep, info->dest_addr, nullptr, 0) < 0);
+                DO_LOG(TRACE) << "Connection request sent";
+
+                return wait_for_eq_connected();
             }
         }
 
@@ -311,7 +324,7 @@ namespace cse498 {
          **/
         inline void recv(unique_buf &data, size_t max_len, size_t offset = 0) {
             assert(data.isRegistered());
-            char* buf = data.get() + offset;
+            char *buf = data.get() + offset;
             SAFE_CALL(fi_recv(ep, buf, max_len, data.getDesc(), 0, nullptr));
             DO_LOG(DEBUG3) << "Receiving up to " << max_len << " bytes";
             SAFE_CALL(wait_for_completion(rx_cq));
@@ -366,10 +379,10 @@ namespace cse498 {
          * @param key The access key for the memory region. The other side of the connection should use the same key (0 works well for this). If the fabric changes it, it will set key.
          * @return True if there was another region with the same key that needed to be closed. 
          **/
-        inline bool register_mr(unique_buf &data, uint64_t access, uint64_t& key) {
+        inline bool register_mr(unique_buf &data, uint64_t access, uint64_t &key) {
             auto elem = mrs->find(key);
             if (elem == mrs->end()) {
-                fid_mr* mr = create_mr(data.get(), data.size(), access, key);
+                fid_mr *mr = create_mr(data.get(), data.size(), access, key);
                 mrs->insert({key, mr});
                 data.registerMemoryCallback(key, fi_mr_desc(mr));
                 return false;
@@ -397,7 +410,7 @@ namespace cse498 {
          * @return True if there was another region with the same key that needed to be closed.
          **/
         [[deprecated("Use with unique_buf instead")]]
-        inline bool register_mr(char *buf, size_t size, uint64_t access, uint64_t& key) {
+        inline bool register_mr(char *buf, size_t size, uint64_t access, uint64_t &key) {
             auto elem = mrs->find(key);
             if (elem == mrs->end()) {
                 auto mr = create_mr(buf, size, access, key);
@@ -461,7 +474,7 @@ namespace cse498 {
             assert(data.isRegistered());
 
             auto b = ERRREPORT(fi_write(ep, data.get() + offset, size, data.getDesc(), 0, addr, key, nullptr));
-            if(b){
+            if (b) {
                 DO_LOG(DEBUG3) << "Write " << key << "-" << addr << " sent";
                 return ERRREPORT(wait_for_completion(tx_cq));
             }
@@ -541,6 +554,7 @@ namespace cse498 {
         }*/
 
     private:
+        bool is_server;
         const size_t MAX_MSG_SIZE = 4096;
         uint64_t msg_sends = 0;
 
@@ -548,6 +562,7 @@ namespace cse498 {
         fi_info *hints, *info;
         fid_fabric *fab;
         fid_domain *domain;
+        fid_pep *pep;
         fid_eq *eq;
         fid_ep *ep;
         fid_cq *rx_cq, *tx_cq;
@@ -577,12 +592,12 @@ namespace cse498 {
             }
         }
 
-        inline fid_mr *create_mr(char *buf, size_t size, uint64_t access, uint64_t& key) {
+        inline fid_mr *create_mr(char *buf, size_t size, uint64_t access, uint64_t &key) {
             fid_mr *mr = nullptr;
-            DO_LOG(TRACE) << "Registering memory region starting at " << (void*) buf;
+            DO_LOG(TRACE) << "Registering memory region starting at " << (void *) buf;
             SAFE_CALL(fi_mr_reg(domain, buf, size, access, 0, key, 0, &mr, nullptr));
             // need to wait on creation to finish
-            DO_LOG(INFO) << "MR KEY: " << fi_mr_key(mr) << " for buffer starting at " << (void*) buf;
+            DO_LOG(INFO) << "MR KEY: " << fi_mr_key(mr) << " for buffer starting at " << (void *) buf;
             key = fi_mr_key(mr);
             return mr;
         }
@@ -636,8 +651,10 @@ namespace cse498 {
 
         /**
          * Performs a blocking read of the event queue until an FI_CONNECTED event is triggered.
+         *
+         * @return true on success
          **/
-        inline void wait_for_eq_connected() {
+        inline bool wait_for_eq_connected() {
             struct fi_eq_cm_entry entry = {};
             uint32_t event = 0;
             DO_LOG(TRACE) << "Reading eq for FI_CONNECTED event";
@@ -647,12 +664,48 @@ namespace cse498 {
                 fi_eq_readerr(eq, &err_entry, 0);
                 DO_LOG(ERROR) << fi_eq_strerror(eq, err_entry.prov_errno, err_entry.err_data, nullptr, 0);
             }
-            SAFE_CALL(addr_len);
-            if (event != FI_CONNECTED) {
+            if (event != FI_CONNECTED || addr_len < 0) {
                 DO_LOG(ERROR) << "Not a connected event";
-                exit(1);
+                return false;
             }
             DO_LOG(DEBUG) << "Connected";
+            return true;
+        }
+
+        /**
+         * Creates the domain, endpoint, counters, binds the event queue, and enables the ep.
+         *
+         * Requires fab, info to be set.
+         *
+         * @return true on success
+         **/
+        inline bool try_setup_active_ep() {
+            LOG2<TRACE>() << "Creating domain";
+            int ret = ERRREPORT(fi_domain(fab, info, &domain, nullptr));
+            if (ret < 0) {
+                return false;
+            }
+
+            LOG2<TRACE>() << "Creating active endpoint";
+            ret = ERRREPORT(fi_endpoint(domain, info, &ep, nullptr));
+            if (ret < 0) {
+                return false;
+            }
+
+            setup_cqs();
+
+            LOG2<TRACE>() << "Binding eq to pep";
+            ret = ERRREPORT(fi_ep_bind(ep, &eq->fid, 0));
+            if (ret < 0) {
+                return false;
+            }
+
+            LOG2<TRACE>() << "Enabling endpoint";
+            ret = ERRREPORT(fi_enable(ep));
+            if (ret < 0) {
+                return false;
+            }
+            return true;
         }
 
         /**
@@ -675,6 +728,17 @@ namespace cse498 {
             DO_LOG(TRACE) << "Enabling endpoint";
             SAFE_CALL(fi_enable(ep));
         }
+
+        inline void createPep(){
+            DO_LOG(TRACE) << "Creating passive endpoint";
+            ERRCHK(fi_passive_ep(fab, info, &pep, nullptr));
+            DO_LOG(TRACE) << "Binding eq to pep";
+            ERRCHK(fi_pep_bind(pep, &eq->fid, 0));
+            assert(pep);
+            DO_LOG(TRACE) << "Transitioning pep to listening state";
+            ERRCHK(fi_listen(pep));
+        }
+
     };
 
 

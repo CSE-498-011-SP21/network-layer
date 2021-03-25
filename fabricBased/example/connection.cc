@@ -14,6 +14,7 @@ int main(int argc, char **argv) {
 	cse498::Connection *conn;
 	if (argc == 2) {
 		conn = new cse498::Connection(argv[1], port);
+		conn->connect();
 
 		char *buf = new char[128];
 		conn->recv(buf, 128);
@@ -40,6 +41,7 @@ int main(int argc, char **argv) {
 		// LOG2<INFO>() << "RMA Buf contains: " << buf2;
 	} else {
 		conn = new cse498::Connection();
+        conn->connect();
 		char *mr = new char[256];
 		std::string init_msg = "abc\0";
 		memcpy(mr, init_msg.c_str(), init_msg.length() + 1);

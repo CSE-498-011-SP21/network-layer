@@ -51,4 +51,4 @@ add_test(connectionTest connectionTest)
 
 add_executable(fabricTest test/fabricTest.cc)
 target_link_libraries(fabricTest PRIVATE GTest::gmock GTest::gtest GTest::gmock_main GTest::gtest_main fabricLibrary fabricBased)
-add_test(fabricTest fabricTest)
+#add_test(fabricTest fabricTest)

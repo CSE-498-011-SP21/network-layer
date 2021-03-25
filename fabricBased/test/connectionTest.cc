@@ -5,7 +5,7 @@
 #include <chrono>
 #include <thread>
 
-void rbc(std::vector<cse498::Connection> &connections, cse498::unique_buf& message, size_t messageSize);
+void rbc(std::vector<cse498::Connection> &connections, cse498::unique_buf &message, size_t messageSize);
 
 TEST(connectionTest, connection_async_send_recv) {
     const std::string msg = "potato\0";
@@ -15,6 +15,7 @@ TEST(connectionTest, connection_async_send_recv) {
         auto *c1 = new cse498::Connection("127.0.0.1", false);
 
         cse498::unique_buf buf;
+        while (!c1->connect());
 
         buf.cpyTo(msg.c_str(), msg.length() + 1);
         uint64_t key = 1;
@@ -26,6 +27,7 @@ TEST(connectionTest, connection_async_send_recv) {
 
     // c2 stuff
     auto *c2 = new cse498::Connection("127.0.0.1", true);
+    while (!c2->connect());
 
     cse498::unique_buf buf;
     uint64_t key = 1;
@@ -42,6 +44,7 @@ TEST(connectionTest, connection_try_recv) {
     auto f = std::async([&msg]() {
         // c1 stuff
         auto *c1 = new cse498::Connection("127.0.0.1", false);
+        while(!c1->connect());
 
         cse498::unique_buf buf;
         uint64_t key = 1;
@@ -55,6 +58,7 @@ TEST(connectionTest, connection_try_recv) {
     });
 
     auto *c2 = new cse498::Connection("127.0.0.1", true);
+    while(!c2->connect());
 
     cse498::unique_buf buf;
     uint64_t key = 1;
@@ -75,6 +79,7 @@ TEST(connectionTest, connection_wait_send_recv_response) {
         const char *addr = "127.0.0.1";
 
         auto *c1 = new cse498::Connection(addr, true);
+        while(!c1->connect());
 
         cse498::unique_buf buf;
         uint64_t key = 1;
@@ -92,6 +97,7 @@ TEST(connectionTest, connection_wait_send_recv_response) {
     // c2 stuff
 
     auto *c2 = new cse498::Connection("127.0.0.1", false);
+    while(!c2->connect());
 
     cse498::unique_buf buf;
     uint64_t key = 1;
@@ -119,6 +125,8 @@ TEST(connectionTest, connection_send_recv_multiple_connections) {
         auto *c0_c1 = new cse498::Connection(addr, true);
         // c2's connection to c0
         auto *c0_c2 = new cse498::Connection(addr, true);
+        while(!c0_c1->connect());
+        while(!c0_c2->connect());
 
         cse498::unique_buf c0_to_c1_msg_buf, c0_to_c2_msg_buf;
         uint64_t key = 1;
@@ -139,6 +147,7 @@ TEST(connectionTest, connection_send_recv_multiple_connections) {
     auto f2 = std::async([&c0_to_c1_msg, &c1_connected]() {
         // c1 stuff
         auto *c1 = new cse498::Connection("127.0.0.1", false);
+        while(!c1->connect());
 
         c1_connected = true;
 
@@ -154,6 +163,7 @@ TEST(connectionTest, connection_send_recv_multiple_connections) {
     while (!c1_connected);
     // c2 stuff
     auto *c2 = new cse498::Connection("127.0.0.1", false);
+    while(!c2->connect());
 
     cse498::unique_buf buf;
     uint64_t key = 1;
@@ -174,6 +184,8 @@ TEST(connectionTest, connection_broadcast) {
         const char *addr = "127.0.0.1";
         cse498::Connection c1 = cse498::Connection(addr, false);
         cse498::unique_buf buf, buf3;
+        while(!c1.connect());
+
         uint64_t key = 1;
         c1.register_mr(buf, FI_WRITE | FI_READ, key);
         key = 2;
@@ -191,6 +203,7 @@ TEST(connectionTest, connection_broadcast) {
     });
 
     auto *c2 = new cse498::Connection("127.0.0.1", true);
+    while(!c2->connect());
 
     cse498::unique_buf buf2;
     uint64_t key = 1;
@@ -223,6 +236,7 @@ TEST(connectionTest, connection_rma) {
         // c1 stuff
         const char *addr = "127.0.0.1";
         auto *c1 = new cse498::Connection(addr, true);
+        while(!c1->connect());
 
         *((uint64_t *) remoteAccess.get()) = ~0;
         uint64_t key = 1;
@@ -239,6 +253,8 @@ TEST(connectionTest, connection_rma) {
     // c2 stuff
 
     auto *c2 = new cse498::Connection("127.0.0.1", false);
+    while(!c2->connect());
+
     uint64_t key = 1;
     c2->register_mr(buf, FI_WRITE | FI_READ, key);
 
@@ -270,6 +286,7 @@ TEST(connectionTest, connection_rma_try_read) {
         // c1 stuff
         const char *addr = "127.0.0.1";
         auto *c1 = new cse498::Connection(addr, true);
+        while(!c1->connect());
 
         *((uint64_t *) remoteAccess.get()) = ~0;
         uint64_t key = 1;
@@ -284,6 +301,7 @@ TEST(connectionTest, connection_rma_try_read) {
     });
 
     auto *c2 = new cse498::Connection("127.0.0.1", false);
+    while(!c2->connect());
     uint64_t key = 1;
     c2->register_mr(buf, FI_WRITE | FI_READ, key);
 
@@ -332,6 +350,9 @@ TEST(connectionTest, connection_changing_rma_perms) {
         auto *c0_c1 = new cse498::Connection(addr, true);
         // c2's connection to c0
         auto *c0_c2 = new cse498::Connection(addr, true);
+        while(!c0_c1->connect());
+        while(!c0_c2->connect());
+
         uint64_t key = 1;
         ASSERT_EQ(false, c0_c1->register_mr(remoteAccess,
                                             FI_WRITE | FI_REMOTE_WRITE | FI_READ | FI_REMOTE_READ, key));
@@ -363,6 +384,7 @@ TEST(connectionTest, connection_changing_rma_perms) {
     auto f2 = std::async([&c1_connected, &mr_registered, &mr2_wrote, &perms_updated, &c1_done, &c0_done]() {
         // c1 stuff
         auto *c1 = new cse498::Connection("127.0.0.1", false);
+        while(!c1->connect());
         c1_connected = true;
         cse498::unique_buf buf;
         uint64_t key = 1;
@@ -390,6 +412,7 @@ TEST(connectionTest, connection_changing_rma_perms) {
 
     auto *c2 = new cse498::Connection("127.0.0.1", false);
     cse498::unique_buf buf;
+    while(!c2->connect());
     uint64_t key = 1;
     c2->register_mr(buf, FI_READ | FI_WRITE, key);
 
@@ -421,4 +444,3 @@ TEST(connectionTest, connection_changing_rma_perms) {
 
     delete c2;
 }
-
