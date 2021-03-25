@@ -17,7 +17,7 @@ int main(int argc, char **argv) {
 
     //spdlog::debug("Using addr {}", addr);
 
-    cse498::ConnectionlessServer c(addr.c_str(), 8080);
+    cse498::ConnectionlessServer c(addr.c_str(), 8080, FI_PROTO_RXM);
 
     char *buf = new char[4096];
     cse498::mr_t mr;
@@ -35,7 +35,7 @@ int main(int argc, char **argv) {
     std::cout << buf << std::endl;
 
     // can use registered memory for send
-    c.send(a, buf, 3);
+    while(!c.try_send(a, buf, 3));
 
     // always free mr
     cse498::free_mr(mr);

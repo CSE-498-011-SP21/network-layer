@@ -16,7 +16,7 @@ int main(int argc, char **argv) {
 
     //spdlog::debug("Using addr {}", addr);
 
-    cse498::ConnectionlessClient c(addr.c_str(), 8080);
+    cse498::ConnectionlessClient c(addr.c_str(), 8080, FI_PROTO_RXM);
     const char *s = "hi";
 
     char *buf = new char[4096];

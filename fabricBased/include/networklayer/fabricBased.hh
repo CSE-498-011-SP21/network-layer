@@ -4,6 +4,9 @@
 
 #pragma once
 
+#include "unique_buf.hh"
+#include "Macros.hh"
+
 #include <networklayer/RPC.hh>
 #include <unistd.h>
 #include <cstdlib>
@@ -19,19 +22,6 @@
 #include <atomic>
 #include <unordered_map>
 
-#include <kvcg_log2.hh>
-
-#define ERRCHK(x) error_check((x), __FILE__, __LINE__);
-
-inline void error_check(int err, std::string file, int line) {
-    if (err) {
-        DO_LOG(ERROR) << "ERROR (" << err << "): " << fi_strerror(-err) << " " << file << ":" << line;
-        _exit(1);
-    }
-}
-
-#define MAJOR_VERSION_USED 1
-#define MINOR_VERSION_USED 9
 
 static_assert(FI_MAJOR_VERSION == MAJOR_VERSION_USED && FI_MINOR_VERSION >= MINOR_VERSION_USED,
               "Rely on libfabric 1.9");
@@ -98,6 +88,7 @@ namespace cse498 {
     /**
      * FabricRPC class. Currently a connectionless server.
      */
+
     class FabricRPC final : public RPC {
     public:
         /**
@@ -191,7 +182,7 @@ namespace cse498 {
          * @param fn RPC function
          */
         inline void registerRPC(uint64_t fnID, std::function<pack_t(pack_t)> fn) {
-            LOG2<DEBUG>() << "Registering " << fnID;
+            DO_LOG(DEBUG) << "Registering " << fnID;
             auto res = fnMap->insert({fnID, fn});
             assert(res.second);
             DO_LOG(DEBUG) << ((res.second) ? "inserted" : "didnt work");
@@ -219,10 +210,9 @@ namespace cse498 {
                 Header h = *(Header *) (remote_buf + sizeof(uint64_t) + sizeOfAddress);
                 auto fnRes = fnMap->find(h.fnID);
 
-                LOG2<DEBUG>() << "Getting fn " << h.fnID;
+                DO_LOG(DEBUG) << "Getting fn " << h.fnID;
 
-
-                LOG2<DEBUG>() << ((fnRes != fnMap->end()) ? "exits" : "dne");
+                DO_LOG(DEBUG) << ((fnRes != fnMap->end()) ? "exits" : "dne");
 
                 assert(fnRes != fnMap->end());
 
@@ -261,7 +251,7 @@ namespace cse498 {
         char *local_buf;
         char *remote_buf;
         std::atomic_bool done;
-    };
+    } __attribute_deprecated__;
 
     /**
      * RPC client using libfabric
@@ -401,5 +391,5 @@ namespace cse498 {
         char *local_buf;
         char *remote_buf;
 
-    };
+    } __attribute_deprecated__;
 }
