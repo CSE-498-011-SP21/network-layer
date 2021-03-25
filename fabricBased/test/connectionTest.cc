@@ -183,11 +183,16 @@ TEST(connectionTest, connection_broadcast) {
     auto f = std::async([&msg, &resp]() {
         const char *addr = "127.0.0.1";
         cse498::Connection c1 = cse498::Connection(addr, false);
-        cse498::unique_buf buf, buf3;
+        cse498::shared_buf buf;
+        cse498::unique_buf buf3;
         while(!c1.connect());
 
+        cse498::shared_buf cpybuf = buf;
+        cpybuf = cpybuf;
         uint64_t key = 1;
-        c1.register_mr(buf, FI_WRITE | FI_READ, key);
+        c1.register_mr(cpybuf, FI_WRITE | FI_READ, key);
+        assert(cpybuf.isRegistered());
+        assert(buf.isRegistered());
         key = 2;
         c1.register_mr(buf3, FI_WRITE | FI_READ, key);
 
@@ -199,7 +204,7 @@ TEST(connectionTest, connection_broadcast) {
         rbc(v, buf3, 4096);
 
         v[0].recv(buf, 4096);
-        ASSERT_STREQ(resp.c_str(), buf.get());
+        ASSERT_STREQ(resp.c_str(), cpybuf.get());
     });
 
     auto *c2 = new cse498::Connection("127.0.0.1", true);
@@ -210,9 +215,11 @@ TEST(connectionTest, connection_broadcast) {
     c2->register_mr(buf2, FI_WRITE | FI_READ, key);
     std::vector<cse498::Connection> v = {};
     // Should be false since hasnt recieved before
-    bool res = cse498::reliableBroadcastReceiveFrom(*c2, v, buf2,
-                                                    [](const cse498::unique_buf &b, size_t s) { return false; },
-                                                    [](const cse498::unique_buf &b, size_t s) {});
+
+    std::function<bool(cse498::unique_buf &, size_t)> fn1 = [](cse498::unique_buf &b, size_t s) { return false; };
+    std::function<void(cse498::unique_buf &, size_t)> fn2 = [](cse498::unique_buf &b, size_t s) {};
+
+    bool res = cse498::reliableBroadcastReceiveFrom(*c2, v, buf2, fn1, fn2);
     ASSERT_TRUE(res);
     ASSERT_STREQ(msg.c_str(), buf2.get());
 
