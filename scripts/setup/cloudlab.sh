@@ -126,3 +126,9 @@ if [[ ${mlnx_ofed} -eq 1 ]]; then
     ## Clean up
     rm -rf ${dyno_ofed_name} ${dyno_ofed_name}.tgz
 fi
+
+cd ~
+
+wget https://github.com/ofiwg/libfabric/releases/download/v1.9.1/libfabric-1.9.1.tar.bz2 && \
+    bunzip2 libfabric-1.9.1.tar.bz2 && tar xf libfabric-1.9.1.tar && cd libfabric-1.9.1 && ./configure && \
+    make -j && make install
