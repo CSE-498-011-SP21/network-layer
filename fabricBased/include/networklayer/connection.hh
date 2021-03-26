@@ -204,13 +204,15 @@ namespace cse498 {
                 return wait_for_eq_connected();
             } else {
                 DO_LOG(TRACE) << "Sending connection request";
-                bool b = ERRREPORT(fi_connect(ep, info->dest_addr, nullptr, 0));
-                if (!b) {
-                    return false;
-                }
-                DO_LOG(TRACE) << "Connection request sent";
+                bool b = false;
+                do {
+                    b = ERRREPORT(fi_connect(ep, info->dest_addr, nullptr, 0));
+                } while (!b);
+                DO_LOG(TRACE) << "Connection request successfully sent";
 
-                return wait_for_eq_connected();
+                while (!wait_for_eq_connected());
+
+                return true;
             }
         }
 
