@@ -684,7 +684,7 @@ namespace cse498 {
             if (addr_len < 0) {
                 struct fi_eq_err_entry err_entry = {};
                 fi_eq_readerr(eq, &err_entry, 0);
-                DO_LOG(ERROR) << fi_eq_strerror(eq, err_entry.prov_errno, err_entry.err_data, nullptr, 0);
+                DO_LOG(ERROR) << fi_eq_strerror(eq, -err_entry.prov_errno, err_entry.err_data, nullptr, 0);
                 return false;
             }
             if (event != FI_CONNECTED) {
