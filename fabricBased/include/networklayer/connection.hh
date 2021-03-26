@@ -204,7 +204,8 @@ namespace cse498 {
                 return wait_for_eq_connected();
             } else {
                 DO_LOG(TRACE) << "Sending connection request";
-                if (fi_connect(ep, info->dest_addr, nullptr, 0) < 0) {
+                bool b = ERRREPORT(fi_connect(ep, info->dest_addr, nullptr, 0));
+                if (!b) {
                     return false;
                 }
                 DO_LOG(TRACE) << "Connection request sent";
@@ -685,13 +686,14 @@ namespace cse498 {
             struct fi_eq_cm_entry entry = {};
             uint32_t event = 0;
             DO_LOG(TRACE) << "Reading eq for FI_CONNECTED event";
-            int addr_len = fi_eq_sread(eq, &event, &entry, sizeof(entry), -1, 0);
-            if (addr_len < 1) {
+            ssize_t addr_len = fi_eq_sread(eq, &event, &entry, sizeof(entry), -1, 0);
+            if (addr_len < 0) {
                 struct fi_eq_err_entry err_entry = {};
                 fi_eq_readerr(eq, &err_entry, 0);
                 DO_LOG(ERROR) << fi_eq_strerror(eq, err_entry.prov_errno, err_entry.err_data, nullptr, 0);
+                return false;
             }
-            if (event != FI_CONNECTED || addr_len < 0) {
+            if (event != FI_CONNECTED) {
                 DO_LOG(ERROR) << "Not a connected event";
                 return false;
             }
