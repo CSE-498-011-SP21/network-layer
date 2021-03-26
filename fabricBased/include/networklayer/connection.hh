@@ -55,7 +55,7 @@ namespace cse498 {
          * @param port Port to connection on. Defaults to 8080
          **/
         Connection(const char *addr, bool is_server, const int port = 8080, ProviderType provider = Sockets) {
-            DO_LOG(TRACE) << "Called with params " << addr << " " << is_server << " " << port;
+            DO_LOG(INFO) << "Called with params " << addr << " " << is_server << " " << port;
             hints = nullptr;
             info = nullptr;
             fab = nullptr;
