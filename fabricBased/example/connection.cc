@@ -40,7 +40,8 @@ int main(int argc, char **argv) {
 		// std::this_thread::sleep_for(timespan);
 		// LOG2<INFO>() << "RMA Buf contains: " << buf2;
 	} else {
-		conn = new cse498::Connection();
+	    const char* addr = "127.0.0.1";
+		conn = new cse498::Connection(addr);
         conn->connect();
 		char *mr = new char[256];
 		std::string init_msg = "abc\0";

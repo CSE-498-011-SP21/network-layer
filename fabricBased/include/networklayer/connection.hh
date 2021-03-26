@@ -56,6 +56,7 @@ namespace cse498 {
          **/
         Connection(const char *addr, bool is_server, const int port = 8080, ProviderType provider = Sockets) {
             DO_LOG(INFO) << "Called with params " << addr << " " << is_server << " " << port;
+            assert(addr != nullptr);
             hints = nullptr;
             info = nullptr;
             fab = nullptr;
@@ -94,15 +95,6 @@ namespace cse498 {
                 setup_active_ep();
             }
         }
-
-        /**
-         * Creates a server side of the connection. Must call connect to complete the connection.
-         * Cannot be used for local connections (there is another constructor for that)
-         * 
-         * @param port the port to connect on. Defaults to 8080
-         **/
-        Connection(const int port = 8080) : Connection(nullptr, true, port) {}
-
 
         /**
          * Creates the client side of the connection. Must call connect to complete the connection.
