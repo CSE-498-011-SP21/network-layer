@@ -204,7 +204,9 @@ namespace cse498 {
                 return wait_for_eq_connected();
             } else {
                 DO_LOG(TRACE) << "Sending connection request";
-                while (fi_connect(ep, info->dest_addr, nullptr, 0) < 0);
+                if (fi_connect(ep, info->dest_addr, nullptr, 0) < 0) {
+                    return false;
+                }
                 DO_LOG(TRACE) << "Connection request sent";
 
                 return wait_for_eq_connected();
@@ -238,7 +240,7 @@ namespace cse498 {
          * @param size The size of the data
          * @param offset offset into buffer
          **/
-        template<typename buf_t, std::enable_if_t<!std::is_same<char*, buf_t>::value>* = nullptr>
+        template<typename buf_t, std::enable_if_t<!std::is_same<char *, buf_t>::value> * = nullptr>
         inline void send(buf_t &data, size_t size, size_t offset = 0) {
             async_send(data, size, offset);
             DO_LOG(DEBUG3) << "Sending " << size << " bytes";
@@ -256,7 +258,7 @@ namespace cse498 {
          * @param size The size of the data
          * @return true on success
          **/
-        template<typename buf_t, std::enable_if_t<!std::is_same<char*, buf_t>::value>* = nullptr>
+        template<typename buf_t, std::enable_if_t<!std::is_same<char *, buf_t>::value> * = nullptr>
         inline bool async_send(buf_t &data, const size_t size, size_t offset = 0) {
             assert(data.isRegistered());
             if (size + offset > MAX_MSG_SIZE) {
@@ -340,7 +342,7 @@ namespace cse498 {
          * @param buf The buffer to store the message data in
          * @param max_len The maximum length of the message (should be <= MAX_MSG_SIZE)
          **/
-        template<typename buf_t, std::enable_if_t<!std::is_same<char*, buf_t>::value>* = nullptr>
+        template<typename buf_t, std::enable_if_t<!std::is_same<char *, buf_t>::value> * = nullptr>
         inline void recv(buf_t &data, size_t max_len, size_t offset = 0) {
             assert(data.isRegistered());
             char *buf = data.get() + offset;
@@ -364,7 +366,7 @@ namespace cse498 {
          * 
          * @return true on success
          **/
-        template<typename buf_t, std::enable_if_t<!std::is_same<char*, buf_t>::value>* = nullptr>
+        template<typename buf_t, std::enable_if_t<!std::is_same<char *, buf_t>::value> * = nullptr>
         inline bool try_recv(buf_t &data, size_t max_len, size_t offset = 0) {
             assert(data.isRegistered());
 
@@ -399,7 +401,7 @@ namespace cse498 {
          * @param key The access key for the memory region. The other side of the connection should use the same key (0 works well for this). If the fabric changes it, it will set key.
          * @return True if there was another region with the same key that needed to be closed. 
          **/
-        template<typename buf_t, std::enable_if_t<!std::is_same<char*, buf_t>::value>* = nullptr>
+        template<typename buf_t, std::enable_if_t<!std::is_same<char *, buf_t>::value> * = nullptr>
         inline bool register_mr(buf_t &data, uint64_t access, uint64_t &key) {
             auto elem = mrs->find(key);
             if (elem == mrs->end()) {
@@ -456,7 +458,7 @@ namespace cse498 {
          * @param addr
          * @param key
          */
-        template<typename buf_t, std::enable_if_t<!std::is_same<char*, buf_t>::value>* = nullptr>
+        template<typename buf_t, std::enable_if_t<!std::is_same<char *, buf_t>::value> * = nullptr>
         inline void write(buf_t &data, size_t size, uint64_t addr, uint64_t key, size_t offset = 0) {
             assert(data.isRegistered());
 
@@ -492,7 +494,7 @@ namespace cse498 {
          * 
          * @return true on success
          */
-        template<typename buf_t, std::enable_if_t<!std::is_same<char*, buf_t>::value>* = nullptr>
+        template<typename buf_t, std::enable_if_t<!std::is_same<char *, buf_t>::value> * = nullptr>
         inline bool try_write(buf_t &data, size_t size, uint64_t addr, uint64_t key, size_t offset = 0) {
             assert(data.isRegistered());
 
@@ -521,7 +523,7 @@ namespace cse498 {
          * @param addr
          * @param key
          */
-        template<typename buf_t, std::enable_if_t<!std::is_same<char*, buf_t>::value>* = nullptr>
+        template<typename buf_t, std::enable_if_t<!std::is_same<char *, buf_t>::value> * = nullptr>
         inline void read(buf_t &data, size_t size, uint64_t addr, uint64_t key, size_t offset = 0) {
             assert(data.isRegistered());
 
@@ -548,7 +550,7 @@ namespace cse498 {
          * 
          * @return true on success
          */
-        template<typename buf_t, std::enable_if_t<!std::is_same<char*, buf_t>::value>* = nullptr>
+        template<typename buf_t, std::enable_if_t<!std::is_same<char *, buf_t>::value> * = nullptr>
         inline bool try_read(buf_t &data, size_t size, uint64_t addr, uint64_t key, size_t offset = 0) {
             assert(data.isRegistered());
 
@@ -786,7 +788,7 @@ namespace cse498 {
      * @param message message to send
      * @param messageSize size of message
      */
-    template<typename buf_t, std::enable_if_t<!std::is_same<char*, buf_t>::value>* = nullptr>
+    template<typename buf_t, std::enable_if_t<!std::is_same<char *, buf_t>::value> * = nullptr>
     inline void bestEffortBroadcast(std::vector<Connection> &connections, buf_t &message, size_t messageSize) {
         for (auto &c : connections) {
             c.send(message, messageSize);
@@ -810,7 +812,7 @@ namespace cse498 {
      * @param buf buffer
      * @param sizeOfBuf buffer size
      */
-    template<typename buf_t, std::enable_if_t<!std::is_same<char*, buf_t>::value>* = nullptr>
+    template<typename buf_t, std::enable_if_t<!std::is_same<char *, buf_t>::value> * = nullptr>
     inline void bestEffortBroadcastReceiveFrom(Connection &connections, buf_t &buf, size_t sizeOfBuf) {
         connections.recv(buf, sizeOfBuf);
     }
@@ -831,7 +833,7 @@ namespace cse498 {
      * @param message message to send
      * @param messageSize size of message
      */
-    template<typename buf_t, std::enable_if_t<!std::is_same<char*, buf_t>::value>* = nullptr>
+    template<typename buf_t, std::enable_if_t<!std::is_same<char *, buf_t>::value> * = nullptr>
     inline void reliableBroadcast(std::vector<Connection> &connections, buf_t &message, size_t messageSize) {
         bestEffortBroadcast(connections, message, messageSize);
     }
@@ -873,7 +875,7 @@ namespace cse498 {
      * @param markAsReceived function to mark a message as received
      * @return true if it has not been received before
      */
-    template<typename buf_t, std::enable_if_t<!std::is_same<char*, buf_t>::value>* = nullptr>
+    template<typename buf_t, std::enable_if_t<!std::is_same<char *, buf_t>::value> * = nullptr>
     inline bool
     reliableBroadcastReceiveFrom(Connection &receiveFrom, std::vector<Connection> &connections,
                                  buf_t &buf,
