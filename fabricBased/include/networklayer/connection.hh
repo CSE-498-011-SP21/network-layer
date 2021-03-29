@@ -35,6 +35,7 @@ namespace cse498 {
             case Verbs:
                 return FI_PROTO_RDMA_CM_IB_RC;
             case Sockets:
+            default:
                 return FI_PROTO_SOCK_TCP;
         }
     }
@@ -183,8 +184,8 @@ namespace cse498 {
          * @param other
          * @return reference to object
          */
-        Connection& operator=(Connection &&other) noexcept {
-            if(&other == this)
+        Connection &operator=(Connection &&other) noexcept {
+            if (&other == this)
                 return *this;
 
             if (hints)
