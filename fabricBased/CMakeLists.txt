@@ -45,6 +45,12 @@ target_link_libraries(connection_rma_client_verbs fabricBased)
 add_executable(connection_rma_server_verbs example/connection_rma_server_verbs.cc)
 target_link_libraries(connection_rma_server_verbs fabricBased)
 
+add_executable(benchmark_rma_client benchmark/benchmark_rma_client.cc)
+target_link_libraries(benchmark_rma_client fabricBased)
+
+add_executable(benchmark_rma_server benchmark/benchmark_rma_server.cc)
+target_link_libraries(benchmark_rma_server fabricBased)
+
 add_executable(connectionTest test/connectionTest.cc)
 target_link_libraries(connectionTest PRIVATE GTest::gmock GTest::gtest GTest::gmock_main GTest::gtest_main broadcastLibrary fabricBased)
 add_test(connectionTest connectionTest)
