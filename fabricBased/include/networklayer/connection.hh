@@ -136,19 +136,30 @@ namespace cse498 {
 
         ~Connection() {
             DO_LOG(TRACE) << "Closing all the fabric objects";
-            fi_freeinfo(hints);
-            fi_freeinfo(info);
-            if (fab) {
-                fi_close(&fab->fid);
-                fi_close(&domain->fid);
-                fi_close(&eq->fid);
-                fi_close(&ep->fid);
-                fi_close(&rx_cq->fid);
-                fi_close(&tx_cq->fid);
-                for (auto it = mrs->begin(); it != mrs->end(); ++it) {
-                    fi_close(&it->second->fid);
-                }
+            if (hints)
+                fi_freeinfo(hints);
+            if (info)
+                fi_freeinfo(info);
+            if (pep) {
+                DO_LOG(DEBUG) << "Close pep";
+                ERRCHK(fi_close(&pep->fid));
             }
+            if (mrs)
+                for (auto &mr : *mrs) {
+                    ERRCHK(fi_close(&mr.second->fid));
+                }
+            if (ep)
+                ERRCHK(fi_close(&ep->fid));
+            if (eq)
+                ERRCHK(fi_close(&eq->fid));
+            if (rx_cq)
+                ERRCHK(fi_close(&rx_cq->fid));
+            if (tx_cq)
+                ERRCHK(fi_close(&tx_cq->fid));
+            if (domain)
+                ERRCHK(fi_close(&domain->fid));
+            if (fab)
+                ERRCHK(fi_close(&fab->fid));
         }
 
         /**
@@ -170,12 +181,16 @@ namespace cse498 {
                 if (!ret) {
                     DO_LOG(ERROR) << "There was an error reading the connection request.";
                     ERRREPORT(fi_close(&pep->fid));
+                    pep = nullptr;
+                    DO_LOG(DEBUG) << "Close pep";
                     return false;
                 }
 
                 if (event != FI_CONNREQ) {
                     DO_LOG(ERROR) << "Incorrect event type";
                     ERRREPORT(fi_close(&pep->fid));
+                    pep = nullptr;
+                    DO_LOG(DEBUG) << "Close pep";
                     return false;
                 }
 
@@ -184,10 +199,15 @@ namespace cse498 {
 
                 if (!try_setup_active_ep()) {
                     ERRREPORT(fi_close(&pep->fid));
+                    pep = nullptr;
+                    DO_LOG(DEBUG) << "Close pep";
                     return false;
                 }
 
                 ERRREPORT(fi_close(&pep->fid));
+                pep = nullptr;
+                DO_LOG(DEBUG) << "Close pep";
+
                 DO_LOG(TRACE) << "Accepting connection request";
                 ret = ERRREPORT(fi_accept(ep, nullptr, 0));
                 if (!ret) {
@@ -197,8 +217,8 @@ namespace cse498 {
                 return wait_for_eq_connected();
             } else {
                 DO_LOG(TRACE) << "Sending connection request";
-                bool b  = ERRREPORT(fi_connect(ep, info->dest_addr, nullptr, 0));
-                if(!b) {
+                bool b = ERRREPORT(fi_connect(ep, info->dest_addr, nullptr, 0));
+                if (!b) {
                     DO_LOG(TRACE) << "Connection request not successful";
                     return false;
                 }
@@ -207,6 +227,67 @@ namespace cse498 {
                 return wait_for_eq_connected();
             }
         }
+
+        inline std::pair<bool, Connection> accept() {
+            if (is_server) {
+                DO_LOG(TRACE) << "Running accept";
+
+                if (!pep) {
+                    createPep();
+                }
+
+                Connection newConn;
+
+                uint32_t event = 0;
+                struct fi_eq_cm_entry entry = {};
+                DO_LOG(TRACE) << "Waiting for connection request";
+                bool ret = ERRREPORT(fi_eq_sread(eq, &event, &entry, sizeof(entry), -1, 0));
+                // May want to check that the address is correct.
+                if (!ret) {
+                    DO_LOG(ERROR) << "There was an error reading the connection request.";
+                    return {false, Connection()};
+                }
+
+                if (event != FI_CONNREQ) {
+                    DO_LOG(ERROR) << "Incorrect event type";
+                    return {false, Connection()};
+                }
+
+                auto old_info = info;
+
+                info = entry.info;
+                DO_LOG(TRACE) << "Connection request received";
+
+                if (!try_setup_active_ep()) {
+                    return {false, Connection()};
+                }
+
+                DO_LOG(TRACE) << "Accepting connection request with ep " << ep;
+                ret = ERRREPORT(fi_accept(ep, nullptr, 0));
+                if (!ret) {
+                    return {false, Connection()};
+                }
+
+                newConn.domain = this->domain;
+                this->domain = nullptr;
+                newConn.ep = this->ep;
+                this->ep = nullptr;
+                newConn.tx_cq = this->tx_cq;
+                this->tx_cq = nullptr;
+                newConn.rx_cq = this->rx_cq;
+                this->rx_cq = nullptr;
+                newConn.eq = eq;
+
+                ret = newConn.wait_for_eq_connected();
+
+                info = old_info;
+                newConn.eq = nullptr;
+
+                return {ret, std::move(newConn)};
+            }
+            return {false, Connection()};
+        }
+
 
         /**
          * Sends a message through the endpoint, blocking until completion. This will
@@ -590,6 +671,19 @@ namespace cse498 {
         fid_cq *rx_cq, *tx_cq;
         std::map<uint64_t, fid_mr *> *mrs = new std::map<uint64_t, fid_mr *>();
 
+        Connection() {
+            is_server = false;
+            hints = nullptr;
+            info = nullptr;
+            fab = nullptr;
+            domain = nullptr;
+            eq = nullptr;
+            ep = nullptr;
+            rx_cq = nullptr;
+            tx_cq = nullptr;
+            pep = nullptr;
+        }
+
         // Based on connectionless.hh, but not identical. This returns the value from fi_cq_read. 
         inline int wait_for_completion(struct fid_cq *cq) {
             fi_cq_msg_entry entry = {};
@@ -703,27 +797,28 @@ namespace cse498 {
          * @return true on success
          **/
         inline bool try_setup_active_ep() {
-            LOG2<TRACE>() << "Creating domain";
+            DO_LOG(TRACE) << "Creating domain";
             int ret = ERRREPORT(fi_domain(fab, info, &domain, nullptr));
             if (ret < 0) {
                 return false;
             }
 
-            LOG2<TRACE>() << "Creating active endpoint";
+            DO_LOG(TRACE) << "Creating active endpoint";
             ret = ERRREPORT(fi_endpoint(domain, info, &ep, nullptr));
             if (ret < 0) {
                 return false;
             }
+            DO_LOG(TRACE) << "Created active endpoint " << (void *) ep;
 
             setup_cqs();
 
-            LOG2<TRACE>() << "Binding eq to pep";
+            DO_LOG(TRACE) << "Binding eq to ep";
             ret = ERRREPORT(fi_ep_bind(ep, &eq->fid, 0));
             if (ret < 0) {
                 return false;
             }
 
-            LOG2<TRACE>() << "Enabling endpoint";
+            DO_LOG(TRACE) << "Enabling endpoint " << (void *) ep;
             ret = ERRREPORT(fi_enable(ep));
             if (ret < 0) {
                 return false;
@@ -745,7 +840,7 @@ namespace cse498 {
 
             setup_cqs();
 
-            DO_LOG(TRACE) << "Binding eq to pep";
+            DO_LOG(TRACE) << "Binding eq to ep";
             SAFE_CALL(fi_ep_bind(ep, &eq->fid, 0));
 
             DO_LOG(TRACE) << "Enabling endpoint";
@@ -753,6 +848,7 @@ namespace cse498 {
         }
 
         inline void createPep() {
+            DO_LOG(DEBUG) << "Create pep";
             DO_LOG(TRACE) << "Creating passive endpoint";
             ERRCHK(fi_passive_ep(fab, info, &pep, nullptr));
             DO_LOG(TRACE) << "Binding eq to pep";

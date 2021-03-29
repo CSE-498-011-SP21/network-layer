@@ -5,7 +5,7 @@
 #include <networklayer/connectionless.hh>
 #include <networklayer/connection.hh>
 
-int LOG_LEVEL = TRACE;
+int LOG_LEVEL = DEBUG;
 
 void rbc(cse498::ConnectionlessServer &c, const std::vector<cse498::addr_t> &addresses, char *message,
          size_t messageSize) {
