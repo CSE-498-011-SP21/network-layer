@@ -179,6 +179,67 @@ namespace cse498 {
         }
 
         /**
+         * Move operator=
+         * @param other
+         * @return reference to object
+         */
+        Connection& operator=(Connection &&other) noexcept {
+            if(&other == this)
+                return *this;
+
+            if (hints)
+                fi_freeinfo(hints);
+            if (info)
+                fi_freeinfo(info);
+            if (pep) {
+                DO_LOG(DEBUG) << "Close pep";
+                ERRREPORT(fi_close(&pep->fid));
+            }
+            if (mrs)
+                for (auto &mr : *mrs) {
+                    ERRREPORT(fi_close(&mr.second->fid));
+                }
+            if (ep)
+                ERRREPORT(fi_close(&ep->fid));
+            if (eq)
+                ERRREPORT(fi_close(&eq->fid));
+            if (rx_cq)
+                ERRREPORT(fi_close(&rx_cq->fid));
+            if (tx_cq)
+                ERRREPORT(fi_close(&tx_cq->fid));
+            if (domain)
+                ERRREPORT(fi_close(&domain->fid));
+            if (fab)
+                ERRREPORT(fi_close(&fab->fid));
+
+            msg_sends = other.msg_sends;
+            is_server = other.is_server;
+
+            hints = other.hints;
+            other.hints = nullptr;
+            info = other.info;
+            other.info = nullptr;
+            fab = other.fab;
+            other.fab = nullptr;
+            pep = other.pep;
+            other.pep = nullptr;
+
+            domain = other.domain;
+            other.domain = nullptr;
+            eq = other.eq;
+            other.eq = nullptr;
+            ep = other.ep;
+            other.ep = nullptr;
+            rx_cq = other.rx_cq;
+            other.rx_cq = nullptr;
+            tx_cq = other.tx_cq;
+            other.tx_cq = nullptr;
+            mrs = other.mrs;
+            other.mrs = nullptr;
+            return *this;
+        }
+
+        /**
          * Initializes the connection with the other side of the connection, blocking until completion.
          * This must be called by both the client and server.
          *
