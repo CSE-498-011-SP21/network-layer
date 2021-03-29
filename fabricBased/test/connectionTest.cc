@@ -251,6 +251,83 @@ TEST(connectionTest, connection_send_recv_multiple_connections_accept) {
     delete c2;
 }
 
+TEST(connectionTest, connection_send_recv_multiple_connections_nonblockingAccept) {
+    DO_LOG(DEBUG);
+    std::atomic_bool c1_connected;
+    c1_connected = false;
+    const std::string c0_to_c1_msg = "Hi c1!\0";
+    const std::string c0_to_c2_msg = "Howdy c2!\0";
+
+    auto f = std::async([&c0_to_c1_msg, &c0_to_c2_msg]() {
+        // c0 stuff
+        const char *addr = "127.0.0.1";
+
+        auto *server = new cse498::Connection(addr, true);
+
+        // c1's connection to c0
+        auto p = server->nonblockingAccept();
+        while(!p.first){
+            p = std::move(server->nonblockingAccept());
+        }
+        ASSERT_TRUE(p.first);
+        auto c0_c1 = std::move(p.second);
+        // c2's connection to c0
+        p = std::move(server->nonblockingAccept());
+        while(!p.first){
+            p = std::move(server->nonblockingAccept());
+        }
+        ASSERT_TRUE(p.first);
+        auto c0_c2 = std::move(p.second);
+
+        cse498::unique_buf c0_to_c1_msg_buf, c0_to_c2_msg_buf;
+        uint64_t key = 1;
+        c0_c1.register_mr(c0_to_c1_msg_buf, FI_WRITE | FI_READ, key);
+        key = 2;
+        c0_c2.register_mr(c0_to_c2_msg_buf, FI_WRITE | FI_READ, key);
+
+        c0_to_c1_msg_buf = c0_to_c1_msg;
+        c0_to_c2_msg_buf = c0_to_c2_msg;
+
+        c0_c1.async_send(c0_to_c1_msg_buf, c0_to_c1_msg.length() + 1);
+        c0_c2.async_send(c0_to_c2_msg_buf, c0_to_c2_msg.length() + 1);
+        c0_c1.wait_for_sends();
+        c0_c2.wait_for_sends();
+
+        delete server;
+    });
+
+    auto f2 = std::async([&c0_to_c1_msg, &c1_connected]() {
+        // c1 stuff
+        auto *c1 = new cse498::Connection("127.0.0.1", false);
+        while(!c1->connect());
+
+        c1_connected = true;
+
+        cse498::unique_buf buf;
+        uint64_t key = 1;
+        c1->register_mr(buf, FI_WRITE | FI_READ, key);
+
+        c1->recv(buf, 128);
+        ASSERT_STREQ(c0_to_c1_msg.c_str(), buf.get());
+        delete c1;
+    });
+
+    while (!c1_connected);
+    // c2 stuff
+    auto *c2 = new cse498::Connection("127.0.0.1", false);
+    while(!c2->connect());
+
+    cse498::unique_buf buf;
+    uint64_t key = 1;
+    c2->register_mr(buf, FI_WRITE | FI_READ, key);
+
+    c2->recv(buf, 128);
+    ASSERT_STREQ(c0_to_c2_msg.c_str(), buf.get());
+    f2.get();
+    f.get();
+    delete c2;
+}
+
 
 TEST(connectionTest, connection_broadcast) {
     DO_LOG(DEBUG);

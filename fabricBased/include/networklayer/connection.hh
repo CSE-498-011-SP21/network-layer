@@ -366,6 +366,67 @@ namespace cse498 {
         }
 
 
+        inline std::pair<bool, Connection> nonblockingAccept() {
+            if (is_server) {
+                DO_LOG(TRACE) << "Running accept";
+
+                if (!pep) {
+                    createPep();
+                }
+
+                Connection newConn;
+
+                uint32_t event = 0;
+                struct fi_eq_cm_entry entry = {};
+                DO_LOG(TRACE) << "Waiting for connection request";
+                bool ret = ERRREPORT(fi_eq_read(eq, &event, &entry, sizeof(entry), 0));
+                // May want to check that the address is correct.
+                if (!ret) {
+                    DO_LOG(TRACE) << "There may have been an error, but unlikely.";
+                    return {false, Connection()};
+                }
+
+                if (event != FI_CONNREQ) {
+                    DO_LOG(ERROR) << "Incorrect event type";
+                    return {false, Connection()};
+                }
+
+                auto old_info = info;
+
+                info = entry.info;
+                DO_LOG(TRACE) << "Connection request received";
+
+                if (!try_setup_active_ep()) {
+                    return {false, Connection()};
+                }
+
+                DO_LOG(TRACE) << "Accepting connection request with ep " << ep;
+                ret = ERRREPORT(fi_accept(ep, nullptr, 0));
+                if (!ret) {
+                    return {false, Connection()};
+                }
+
+                newConn.domain = this->domain;
+                this->domain = nullptr;
+                newConn.ep = this->ep;
+                this->ep = nullptr;
+                newConn.tx_cq = this->tx_cq;
+                this->tx_cq = nullptr;
+                newConn.rx_cq = this->rx_cq;
+                this->rx_cq = nullptr;
+                newConn.eq = eq;
+
+                ret = newConn.wait_for_eq_connected();
+
+                info = old_info;
+                newConn.eq = nullptr;
+
+                return {ret, std::move(newConn)};
+            }
+            return {false, Connection()};
+        }
+
+
         /**
          * Sends a message through the endpoint, blocking until completion. This will
          * also block until all previous messages sent by async_send are completed as
