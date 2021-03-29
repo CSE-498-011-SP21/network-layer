@@ -104,6 +104,22 @@ namespace cse498 {
          **/
         Connection(const char *addr, const int port = 8080) : Connection(addr, false, port) {}
 
+        /**
+         * Creates null connection.
+         */
+        Connection() {
+            is_server = false;
+            hints = nullptr;
+            info = nullptr;
+            fab = nullptr;
+            domain = nullptr;
+            eq = nullptr;
+            ep = nullptr;
+            rx_cq = nullptr;
+            tx_cq = nullptr;
+            pep = nullptr;
+        }
+
         Connection(const Connection &) = delete;
 
         Connection(Connection &&other) {
@@ -670,19 +686,6 @@ namespace cse498 {
         fid_ep *ep;
         fid_cq *rx_cq, *tx_cq;
         std::map<uint64_t, fid_mr *> *mrs = new std::map<uint64_t, fid_mr *>();
-
-        Connection() {
-            is_server = false;
-            hints = nullptr;
-            info = nullptr;
-            fab = nullptr;
-            domain = nullptr;
-            eq = nullptr;
-            ep = nullptr;
-            rx_cq = nullptr;
-            tx_cq = nullptr;
-            pep = nullptr;
-        }
 
         // Based on connectionless.hh, but not identical. This returns the value from fi_cq_read. 
         inline int wait_for_completion(struct fid_cq *cq) {
