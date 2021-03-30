@@ -1,6 +1,7 @@
-//
-// Created by depaulsmiller on 3/25/21.
-//
+/**
+ * @file
+ */
+
 
 #ifndef NETWORKLAYER_SHARED_BUF_HH
 #define NETWORKLAYER_SHARED_BUF_HH

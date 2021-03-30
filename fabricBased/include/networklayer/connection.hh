@@ -1,3 +1,7 @@
+/**
+ * @file
+ */
+
 #pragma once
 
 #include "unique_buf.hh"
@@ -30,6 +34,11 @@ namespace cse498 {
         Sockets
     };
 
+    /**
+     * Return protocol from provider
+     * @param provider
+     * @return protocol to use
+     */
     inline uint32_t providerToProtocol(ProviderType provider) {
         switch (provider) {
             case Verbs:
@@ -47,13 +56,11 @@ namespace cse498 {
     public:
         /**
          * Creates one side of the connection (either client or server). Must call connect to complete the connection
-         * The address can be null if this is the server side and it is not connecting to 127.0.0.1 
-         * 
-         * If you are creating the server side of a connection connecting to 127.0.0.1 then you have to use this constructor. 
-         * 
-         * @param address address to use on the network, can be nullptr if the address is not 127.0.0.1 and it is the server
+         *
+         * @param addr address to use on the network, cannot be nullptr
          * @param is_server Whether this machine is the server (doesn't matter which one in a connection is the server as long as one is)
          * @param port Port to connection on. Defaults to 8080
+         * @param provider provider type to use
          **/
         Connection(const char *addr, bool is_server, const int port = 8080, ProviderType provider = Sockets) {
             DO_LOG(INFO) << "Called with params " << addr << " " << is_server << " " << port;
@@ -123,6 +130,10 @@ namespace cse498 {
 
         Connection(const Connection &) = delete;
 
+        /**
+         * Move contructor
+         * @param other
+         */
         Connection(Connection &&other) {
             msg_sends = other.msg_sends;
             is_server = other.is_server;
@@ -242,11 +253,13 @@ namespace cse498 {
 
         /**
          * Initializes the connection with the other side of the connection, blocking until completion.
-         * This must be called by both the client and server.
+         * This must be called by both the client and server. Create a new client connection
+         * if it fails here.
          *
          * @return true on success
          */
         inline bool connect() {
+            assert(!failed);
             if (is_server) {
 
                 createPep();
@@ -298,6 +311,7 @@ namespace cse498 {
                 bool b = ERRREPORT(fi_connect(ep, info->dest_addr, nullptr, 0));
                 if (!b) {
                     DO_LOG(TRACE) << "Connection request not successful";
+                    failed = true;
                     return false;
                 }
                 DO_LOG(TRACE) << "Connection request successfully sent";
@@ -306,6 +320,10 @@ namespace cse498 {
             }
         }
 
+        /**
+         * Creates a new connection object
+         * @return true if sucessful with the object, and false and a null connection if not sucessful
+         */
         inline std::pair<bool, Connection> accept() {
             if (is_server) {
                 DO_LOG(TRACE) << "Running accept";
@@ -366,7 +384,10 @@ namespace cse498 {
             return {false, Connection()};
         }
 
-
+        /**
+         * Like accept but does not block at all.
+         * @return
+         */
         inline std::pair<bool, Connection> nonblockingAccept() {
             if (is_server) {
                 DO_LOG(TRACE) << "Running accept";
@@ -428,16 +449,6 @@ namespace cse498 {
         }
 
 
-        /**
-         * Sends a message through the endpoint, blocking until completion. This will
-         * also block until all previous messages sent by async_send are completed as
-         * well (this means you can touch any data buffer from any previous send after
-         * calling this)
-         *
-         * @param data The data to send
-         * @param size The size of the data
-         * @param offset offset into buffer
-         **/
         [[deprecated("Use with unique_buf instead")]]
         inline void send(const char *buf, size_t size) {
             async_send(buf, size);
@@ -471,10 +482,11 @@ namespace cse498 {
          *
          * @param data The data to send
          * @param size The size of the data
+         * @param offset offset into buffer
          * @return true on success
          **/
         template<typename buf_t, std::enable_if_t<!std::is_same<char *, buf_t>::value> * = nullptr>
-        inline bool async_send(buf_t &data, const size_t size, size_t offset = 0) {
+        inline bool async_send(buf_t &data, size_t size, size_t offset = 0) {
             assert(data.isRegistered());
             if (size + offset > MAX_MSG_SIZE) {
                 DO_LOG(ERROR) << "Too large of a message!";
@@ -494,14 +506,7 @@ namespace cse498 {
             return ERRREPORT(fi_send(ep, buf, size, nullptr, 0, nullptr));
         }
 
-        /**
-         * This adds a message to the queue to be sent, blocking until completion. 
-         *
-         * @param data The data to send
-         * @param size The size of the data
-         * 
-         * @return true on success
-         **/
+        [[deprecated]]
         inline bool try_send(const char *data, const size_t size) {
             if (size > MAX_MSG_SIZE) {
                 LOG2<ERROR>() << "Too large of a message!";
@@ -556,6 +561,7 @@ namespace cse498 {
          *
          * @param buf The buffer to store the message data in
          * @param max_len The maximum length of the message (should be <= MAX_MSG_SIZE)
+         * @param offset offset into buffer
          **/
         template<typename buf_t, std::enable_if_t<!std::is_same<char *, buf_t>::value> * = nullptr>
         inline void recv(buf_t &data, size_t max_len, size_t offset = 0) {
@@ -578,7 +584,8 @@ namespace cse498 {
          *
          * @param buf The buffer to store the message data in
          * @param max_len The maximum length of the message (should be <= MAX_MSG_SIZE)
-         * 
+         * @param offset
+         *
          * @return true on success
          **/
         template<typename buf_t, std::enable_if_t<!std::is_same<char *, buf_t>::value> * = nullptr>
@@ -635,18 +642,6 @@ namespace cse498 {
             }
         }
 
-        /**
-         * Registers a new memory region which only works for this connection. If there is already
-         * a memory region registered with the same key then it will close the previous one and register
-         * this one. You can use this to change permissions for a memory region on a specific connection
-         * (by calling this function again on the same buf, but with the new access flags)
-         *
-         * @param buf The buffer to register
-         * @param size The size of the buffer
-         * @param access The access flags for the memory region (FI_WRITE, FI_REMOTE_WRITE, FI_READ, and/or FI_REMOTE_READ. Bitwise or for multiple permissions)
-         * @param key The access key for the memory region. The other side of the connection should use the same key (0 works well for this)
-         * @return True if there was another region with the same key that needed to be closed.
-         **/
         [[deprecated("Use with unique_buf instead")]]
         inline bool register_mr(char *buf, size_t size, uint64_t access, uint64_t &key) {
             auto elem = mrs->find(key);
@@ -667,11 +662,12 @@ namespace cse498 {
 
         /**
          * Write from buf with given size to the addr with the given key
-         * Note addresses start at 0
+         * Note addresses start at 0 for sockets, and the virtual address for verbs
          * @param buf
          * @param size
          * @param addr
          * @param key
+         * @param offset
          */
         template<typename buf_t, std::enable_if_t<!std::is_same<char *, buf_t>::value> * = nullptr>
         inline void write(buf_t &data, size_t size, uint64_t addr, uint64_t key, size_t offset = 0) {
@@ -682,14 +678,6 @@ namespace cse498 {
             SAFE_CALL(wait_for_completion(tx_cq));
         }
 
-        /**
-         * Write from buf with given size to the addr with the given key
-         * Note addresses start at 0
-         * @param buf
-         * @param size
-         * @param addr
-         * @param key
-         */
         [[deprecated("Use with unique_buf instead")]]
         inline void write(const char *buf, size_t size, uint64_t addr, uint64_t key) {
             SAFE_CALL(fi_write(ep, buf, size, nullptr, 0, addr, key, nullptr));
@@ -700,7 +688,7 @@ namespace cse498 {
         /**
          * Write from buf with given size to the addr with the given key. Blocks
          * until completion. 
-         * Note addresses start at 0
+         * Note addresses start at 0 for sockets, and the virtual address for verbs
          * @param data
          * @param size
          * @param addr
@@ -737,6 +725,7 @@ namespace cse498 {
          * @param size
          * @param addr
          * @param key
+         * @param offset
          */
         template<typename buf_t, std::enable_if_t<!std::is_same<char *, buf_t>::value> * = nullptr>
         inline void read(buf_t &data, size_t size, uint64_t addr, uint64_t key, size_t offset = 0) {
@@ -762,7 +751,8 @@ namespace cse498 {
          * @param size
          * @param addr
          * @param key
-         * 
+         * @param offset
+         *
          * @return true on success
          */
         template<typename buf_t, std::enable_if_t<!std::is_same<char *, buf_t>::value> * = nullptr>
@@ -789,14 +779,9 @@ namespace cse498 {
             return false;
         }
 
-        /*inline void read_local(char *buf, size_t size, uint64_t addr, uint64_t key) {
-            int ret = SAFE_CALL(fi_read(ep, buf, size, fi_mr_desc(mr), ~0, addr, key, nullptr));
-            DO_LOG(INFO) << "Read sent: " << ret;
-            SAFE_CALL(wait_for_completion(tx_cq));
-        }*/
-
     private:
         bool is_server;
+        bool failed = false;
         const size_t MAX_MSG_SIZE = 4096;
         uint64_t msg_sends = 0;
 
