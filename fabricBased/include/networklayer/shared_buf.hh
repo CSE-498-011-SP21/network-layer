@@ -27,7 +27,7 @@ namespace cse498 {
          */
         shared_buf() : buf(new char[4096]), s_(4096), refCount(new std::atomic_uint32_t(1)) {
             registered = new std::atomic_bool(false);
-            key_ = new std::atomic_uint64_t();
+            key_ = new std::atomic_int64_t();
             desc = new std::atomic<void*>(nullptr);
         }
 
@@ -37,7 +37,7 @@ namespace cse498 {
          */
         explicit shared_buf(size_t s) : buf(new char[s]), s_(s), refCount(new std::atomic_uint32_t(1)) {
             registered = new std::atomic_bool(false);
-            key_ = new std::atomic_uint64_t();
+            key_ = new std::atomic_int64_t();
             desc = new std::atomic<void*>(nullptr);
         }
 
@@ -237,7 +237,7 @@ namespace cse498 {
         char *buf;
         size_t s_;
         std::atomic_bool *registered;
-        std::atomic_uint64_t *key_;
+        std::atomic_int64_t *key_;
         std::atomic<void *> *desc = nullptr;
         std::atomic_uint32_t *refCount;
     };
