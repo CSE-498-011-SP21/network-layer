@@ -449,12 +449,12 @@ namespace cse498 {
         }
 
 
-        [[deprecated("Use with unique_buf instead")]]
+        /*[[deprecated("Use with unique_buf instead")]]
         inline void send(const char *buf, size_t size) {
             async_send(buf, size);
             DO_LOG(DEBUG3) << "Sending " << size << " bytes";
             wait_for_sends();
-        }
+        }*/
 
         /**
          * Sends a message through the endpoint, blocking until completion. This will
@@ -496,7 +496,7 @@ namespace cse498 {
             return ERRREPORT(fi_send(ep, data.get() + offset, size, data.getDesc(), 0, nullptr));
         }
 
-        [[deprecated("Use with unique_buf instead")]]
+        /*[[deprecated("Use with unique_buf instead")]]
         inline bool async_send(const char *buf, const size_t size) {
             if (size > MAX_MSG_SIZE) {
                 DO_LOG(ERROR) << "Too large of a message!";
@@ -524,7 +524,7 @@ namespace cse498 {
             }
             LOG2<TRACE>() << "Message send failed";
             return false;
-        }
+        }*/
 
         /**
          * Ensures all the previous sends were completed. This means after calling this
@@ -572,12 +572,12 @@ namespace cse498 {
             SAFE_CALL(wait_for_completion(rx_cq));
         }
 
-        [[deprecated("Use with unique_buf instead")]]
+        /*[[deprecated("Use with unique_buf instead")]]
         inline void recv(char *buf, size_t max_len) {
             SAFE_CALL(fi_recv(ep, buf, max_len, nullptr, 0, nullptr));
             DO_LOG(DEBUG3) << "Receiving up to " << max_len << " bytes";
             SAFE_CALL(wait_for_completion(rx_cq));
-        }
+        }*/
 
         /**
          * Blocks until it receives a message from the endpoint.
@@ -600,7 +600,7 @@ namespace cse498 {
             return false;
         }
 
-        [[deprecated("Use with unique_buf instead")]]
+        /*[[deprecated("Use with unique_buf instead")]]
         inline bool try_recv(char *buf, size_t max_len) {
             DO_LOG(DEBUG3) << "Receiving up to " << max_len << " bytes";
             bool b = ERRREPORT(fi_recv(ep, buf, max_len, nullptr, 0, nullptr));
@@ -608,7 +608,7 @@ namespace cse498 {
                 return ERRREPORT(wait_for_completion(rx_cq));
             }
             return false;
-        }
+        }*/
 
 
         /**
@@ -642,7 +642,7 @@ namespace cse498 {
             }
         }
 
-        [[deprecated("Use with unique_buf instead")]]
+        /*[[deprecated("Use with unique_buf instead")]]
         inline bool register_mr(char *buf, size_t size, uint64_t access, uint64_t &key) {
             auto elem = mrs->find(key);
             if (elem == mrs->end()) {
@@ -657,7 +657,7 @@ namespace cse498 {
                 assert(key_before == key);
                 return true;
             }
-        }
+        }*/
 
 
         /**
@@ -678,12 +678,12 @@ namespace cse498 {
             SAFE_CALL(wait_for_completion(tx_cq));
         }
 
-        [[deprecated("Use with unique_buf instead")]]
+        /*[[deprecated("Use with unique_buf instead")]]
         inline void write(const char *buf, size_t size, uint64_t addr, uint64_t key) {
             SAFE_CALL(fi_write(ep, buf, size, nullptr, 0, addr, key, nullptr));
             DO_LOG(DEBUG3) << "Write " << key << "-" << addr << " sent";
             SAFE_CALL(wait_for_completion(tx_cq));
-        }
+        }*/
 
         /**
          * Write from buf with given size to the addr with the given key. Blocks
@@ -709,7 +709,7 @@ namespace cse498 {
             return false;
         }
 
-        [[deprecated("Use with unique_buf instead")]]
+        /*[[deprecated("Use with unique_buf instead")]]
         inline bool try_write(const char *buf, size_t size, uint64_t addr, uint64_t key) {
             bool b = ERRREPORT(fi_write(ep, buf, size, nullptr, 0, addr, key, nullptr));
             LOG2<DEBUG3>() << "Write " << key << "-" << addr << " sent";
@@ -717,7 +717,7 @@ namespace cse498 {
                 return ERRREPORT(wait_for_completion(tx_cq));
             }
             return false;
-        }
+        }*/
 
         /**
          * Read size bytes from the addr with the given key into buf. 
@@ -736,12 +736,12 @@ namespace cse498 {
             SAFE_CALL(wait_for_completion(tx_cq));
         }
 
-        [[deprecated("Use with unique_buf instead")]]
+        /*[[deprecated("Use with unique_buf instead")]]
         inline void read(char *buf, size_t size, uint64_t addr, uint64_t key) {
             SAFE_CALL(fi_read(ep, buf, size, nullptr, 0, addr, key, nullptr));
             DO_LOG(DEBUG3) << "Read " << key << "-" << addr << " sent";
             SAFE_CALL(wait_for_completion(tx_cq));
-        }
+        }*/
 
 
         /**
@@ -768,7 +768,7 @@ namespace cse498 {
             return false;
         }
 
-        [[deprecated("Use with unique_buf instead")]]
+        /*[[deprecated("Use with unique_buf instead")]]
         inline bool try_read(char *buf, size_t size, uint64_t addr, uint64_t key, size_t offset = 0) {
             //SAFE_CALL(fi_read(ep, buf, size, nullptr, 0, addr, key, nullptr));
             DO_LOG(DEBUG3) << "Read " << key << "-" << addr << " sent";
@@ -777,7 +777,7 @@ namespace cse498 {
                 return ERRREPORT(wait_for_completion(tx_cq));
             }
             return false;
-        }
+        }*/
 
     private:
         bool is_server;
@@ -972,18 +972,18 @@ namespace cse498 {
     };
 
 
-    /**
+    /*
      * Performs best effort broadcast
      * @param clients clients to send to
      * @param message message to send
      * @param messageSize size of message
      */
-    [[deprecated("Use with unique_buf instead")]]
+    /*[[deprecated("Use with unique_buf instead")]]
     inline void bestEffortBroadcast(std::vector<Connection> &connections, const char *message, size_t messageSize) {
         for (auto &c : connections) {
             c.send(message, messageSize);
         }
-    }
+    }*/
 
     /**
      * Performs best effort broadcast
@@ -999,15 +999,15 @@ namespace cse498 {
     }
 
 
-    /**
+    /*
      * Performs best effort broadcast recieve from client
      * @param clients clients to recv from
      * @param buf buffer
      * @param sizeOfBuf buffer size
      */
-    inline void bestEffortBroadcastReceiveFrom(Connection &connections, char *buf, size_t sizeOfBuf) {
+    /*inline void bestEffortBroadcastReceiveFrom(Connection &connections, char *buf, size_t sizeOfBuf) {
         connections.recv(buf, sizeOfBuf);
-    }
+    }*/
 
     /**
      * Performs best effort broadcast recieve from client
@@ -1020,15 +1020,15 @@ namespace cse498 {
         connections.recv(buf, sizeOfBuf);
     }
 
-    /**
+    /*
      * Reliably broadcast from a server
      * @param clients clients to send to
      * @param message message to send
      * @param messageSize size of message
      */
-    inline void reliableBroadcast(std::vector<Connection> &connections, const char *message, size_t messageSize) {
+    /*inline void reliableBroadcast(std::vector<Connection> &connections, const char *message, size_t messageSize) {
         bestEffortBroadcast(connections, message, messageSize);
-    }
+    }*/
 
     /**
      * Reliably broadcast from a server
@@ -1042,7 +1042,7 @@ namespace cse498 {
     }
 
 
-    /**
+    /*
      * Receive from
      * @param receiveFrom node to receive from
      * @param clients clients to send to
@@ -1052,7 +1052,7 @@ namespace cse498 {
      * @param markAsReceived function to mark a message as received
      * @return true if it has not been received before
      */
-    inline bool
+    /*inline bool
     reliableBroadcastReceiveFrom(Connection &receiveFrom, std::vector<Connection> &connections,
                                  char *buf,
                                  size_t bufSize, const std::function<bool(char *, size_t)> &checkIfReceivedBefore,
@@ -1066,7 +1066,7 @@ namespace cse498 {
             return true;
         }
         return false;
-    }
+    }*/
 
     /**
      * Receive from
