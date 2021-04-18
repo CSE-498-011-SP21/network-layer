@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.14)
 
-project(NetworkLayer VERSION 3.0.0)
+project(NetworkLayer VERSION 3.0.0 LANGUAGES CUDA CXX)
 
 include(FetchContent)
 
@@ -25,6 +25,10 @@ enable_testing()
 add_subdirectory(commonAPI)
 
 add_subdirectory(fabricBased)
+
+if(${USE_CUDA})
+    add_subdirectory(fabricBasedCUDA)
+endif()
 
 add_subdirectory(docs)
 
