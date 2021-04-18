@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.14)
 
-project(NetworkLayer VERSION 3.0.0 LANGUAGES CUDA CXX)
+project(NetworkLayer VERSION 3.0.0 LANGUAGES CXX)
 
 include(FetchContent)
 
