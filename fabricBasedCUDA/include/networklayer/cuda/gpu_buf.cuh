@@ -2,8 +2,8 @@
  * @file
  */
 
-#ifndef NETWORKLAYER_UNIQUE_BUF_HH
-#define NETWORKLAYER_UNIQUE_BUF_HH
+#ifndef NETWORKLAYER_GPU_BUF_HH
+#define NETWORKLAYER_GPU_BUF_HH
 
 #include <cstddef>
 #include <cstring>
@@ -24,13 +24,11 @@ namespace cse498 {
          */
         gpu_buf() : k_buf(nullptr), h_buf(nullptr), s_(0) {}
 
-        gpu_buf(char *k, char *h, size_t s) : k_buf(k), h_buf(h)
+        gpu_buf(char *k, char *h, size_t s) : k_buf(k), h_buf(h), s_(s) {}
 
-        s_(s) {}
+        gpu_buf(const gpu_buf &) = delete;
 
-        gpu_buf(const unique_buf &) = delete;
-
-        gpu_buf(unique_buf &&other) = default;
+        gpu_buf(gpu_buf &&other) = default;
 
         ~gpu_buf() {}
 
@@ -52,13 +50,13 @@ namespace cse498 {
             return h_buf[idx];
         }
 
-        inline void moveToGPU() {
+        inline void moveToGPU() const {
             if (cudaMemcpy(k_buf, h_buf, s_, cudaMemcpyHostToDevice) != cudaSuccess) {
                 exit(1);
             }
         }
 
-        inline void moveToCPU() {
+        inline void moveToCPU() const {
             if (cudaMemcpy(h_buf, k_buf, s_, cudaMemcpyDeviceToHost) != cudaSuccess) {
                 exit(1);
             }
@@ -91,7 +89,7 @@ namespace cse498 {
          * @param s
          * @return
          */
-        inline unique_buf &operator=(const std::string &s) {
+        inline gpu_buf &operator=(const std::string &s) {
             memcpy(h_buf, s.c_str(), s.size() + 1);
             moveToGPU();
             return *this;
@@ -177,4 +175,4 @@ namespace cse498 {
 
 }
 
-#endif //NETWORKLAYER_UNIQUE_BUF_HH
+#endif //NETWORKLAYER_GPU_BUF_HH
