@@ -10,7 +10,7 @@
 #include <unistd.h>
 
 #define MAJOR_VERSION_USED 1
-#define MINOR_VERSION_USED 9
+#define MINOR_VERSION_USED 12
 
 #define ERRCHK(x) error_check((x), __FILENAME__, __LINE__);
 
