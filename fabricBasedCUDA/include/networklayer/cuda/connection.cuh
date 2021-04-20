@@ -838,7 +838,7 @@ namespace cse498 {
             hints->caps = FI_MSG | FI_RMA | FI_ATOMIC | FI_HMEM;
             hints->ep_attr->type = FI_EP_MSG;
             hints->ep_attr->protocol = protocol;
-            hints->domain_attr->mr_mode = FI_MR_LOCAL | FI_MR_ALLOCATED | FI_MR_PROV_KEY | FI_MR_VIRT_ADDR;
+            hints->domain_attr->mr_mode = FI_MR_LOCAL | FI_MR_ALLOCATED | FI_MR_PROV_KEY | FI_MR_VIRT_ADDR | FI_MR_HMEM;
         }
 
         /**

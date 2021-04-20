@@ -14,7 +14,7 @@ int main(int argc, char **argv) {
         addr = argv[1];
     }
     int port = 8080;
-    auto *c2 = new cse498::Connection(addr.c_str(), false, port);
+    auto *c2 = new cse498::Connection(addr.c_str(), false, port, cse498::Verbs);
 
     while (!c2->connect());
 
