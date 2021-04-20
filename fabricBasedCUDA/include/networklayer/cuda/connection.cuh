@@ -823,8 +823,9 @@ namespace cse498 {
 
         inline fid_mr *create_mr(char *buf, size_t size, uint64_t access, uint64_t &key, bool cuda = false) {
             fid_mr *mr = nullptr;
-            DO_LOG(TRACE) << "Registering memory region starting at " << (void *) buf;
-
+            {
+                DO_LOG(TRACE) << "Registering memory region starting at " << (void *) buf;
+            }
             fi_mr_attr attr{};
 
             iovec iov{};
