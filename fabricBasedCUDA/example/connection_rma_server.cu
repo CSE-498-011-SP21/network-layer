@@ -32,7 +32,7 @@ int main(int argc, char **argv) {
     *((uint64_t *) remoteAccess.getCPU()) = ~0;
     remoteAccess.moveToGPU();
     uint64_t key = 1;
-    c1->register_mr(remoteAccess,  FI_REMOTE_WRITE | FI_REMOTE_READ, key);
+    c1->register_mr(remoteAccess,  FI_REMOTE_WRITE | FI_REMOTE_READ, key, true);
     uint64_t key2 = 2;
     c1->register_mr(buf, FI_SEND | FI_RECV | FI_WRITE | FI_REMOTE_WRITE | FI_READ | FI_REMOTE_READ, key2);
 

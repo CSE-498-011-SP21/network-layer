@@ -4,7 +4,7 @@ add_library(fabricBasedCUDA INTERFACE)
 target_link_libraries(fabricBasedCUDA INTERFACE rpc pthread TBB::tbb)
 target_include_directories(fabricBasedCUDA INTERFACE "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>" "$<INSTALL_INTERFACE:include>")
 target_link_libraries(fabricBasedCUDA INTERFACE Common::kvcg_stuff)
-target_link_libraries(fabricBasedCUDA INTERFACE fabric)
+target_link_libraries(fabricBasedCUDA INTERFACE fabric cuda cudart)
 
 install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/ DESTINATION include)
 

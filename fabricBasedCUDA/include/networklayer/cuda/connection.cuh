@@ -18,6 +18,9 @@
 #include <cstring>
 #include <map>
 #include <cassert>
+#include <cuda.h>
+#include <cuda_runtime.h>
+
 
 static_assert(FI_MAJOR_VERSION == MAJOR_VERSION_USED && FI_MINOR_VERSION >= MINOR_VERSION_USED,
               "Rely on libfabric 1.9");
@@ -623,10 +626,10 @@ namespace cse498 {
          * @return True if there was another region with the same key that needed to be closed. 
          **/
         template<typename buf_t, std::enable_if_t<!std::is_same<char *, buf_t>::value> * = nullptr>
-        inline bool register_mr(buf_t &data, uint64_t access, uint64_t &key) {
+        inline bool register_mr(buf_t &data, uint64_t access, uint64_t &key, bool cuda = false) {
             auto elem = mrs->find(key);
             if (elem == mrs->end()) {
-                fid_mr *mr = create_mr(data.get(), data.size(), access, key);
+                fid_mr *mr = create_mr(data.get(), data.size(), access, key, cuda);
                 mrs->insert({key, mr});
                 data.registerMemoryCallback(key, fi_mr_desc(mr));
                 return false;
@@ -634,7 +637,7 @@ namespace cse498 {
                 DO_LOG(INFO) << "Closing old memory region";
                 SAFE_CALL(fi_close(&elem->second->fid));
                 auto key_before = key;
-                elem->second = create_mr(data.get(), data.size(), access, key);
+                elem->second = create_mr(data.get(), data.size(), access, key, cuda);
                 assert(key_before == key);
                 data.registerMemoryCallback(key, fi_mr_desc(elem->second));
                 return true;
@@ -818,10 +821,32 @@ namespace cse498 {
             }
         }
 
-        inline fid_mr *create_mr(char *buf, size_t size, uint64_t access, uint64_t &key) {
+        inline fid_mr *create_mr(char *buf, size_t size, uint64_t access, uint64_t &key, bool cuda = false) {
             fid_mr *mr = nullptr;
             DO_LOG(TRACE) << "Registering memory region starting at " << (void *) buf;
-            SAFE_CALL(fi_mr_reg(domain, buf, size, access, 0, key, 0, &mr, nullptr));
+
+            fi_mr_attr attr{};
+
+            iovec iov{};
+            iov.iov_base = buf;
+            iov.iov_len = size;
+
+            attr.mr_iov = &iov;
+            attr.iov_count = 1;
+            attr.access = access;
+            attr.offset = 0;
+            attr.requested_key = key;
+            attr.context = nullptr;
+            if (cuda) {
+                attr.iface = FI_HMEM_CUDA;
+                CUdevice d;
+                cuDeviceGet(&d, 0);
+                attr.device.cuda = d;
+            } else
+                attr.iface = FI_HMEM_SYSTEM;
+
+            SAFE_CALL(fi_mr_regattr(domain, &attr, 0, &mr));
+
             // need to wait on creation to finish
             DO_LOG(INFO) << "MR KEY: " << fi_mr_key(mr) << " for buffer starting at " << (void *) buf;
             key = fi_mr_key(mr);
