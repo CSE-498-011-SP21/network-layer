@@ -3,13 +3,21 @@
 //
 
 #include <networklayer/cuda/connection.cuh>
+#include <networklayer/cuda/gpu_buf.cuh>
 #include <unistd.h>
 
 int LOG_LEVEL = DEBUG;
 
 int main(int argc, char **argv) {
 
-    cse498::unique_buf remoteAccess, buf;
+    cse498::unique_buf buf;
+
+    char* gpu_buf, *cpu_buf;
+    cpu_buf = new char[4096];
+
+    cudaMalloc(&gpu_buf, 4096);
+
+    cse498::gpu_buf remoteAccess(gpu_buf, cpu_buf, 4096);
 
     const char *addr = "127.0.0.1";
 
@@ -21,7 +29,8 @@ int main(int argc, char **argv) {
 
     while (!c1->connect());
 
-    *((uint64_t *) remoteAccess.get()) = ~0;
+    *((uint64_t *) remoteAccess.getCPU()) = ~0;
+    remoteAccess.moveToGPU();
     uint64_t key = 1;
     c1->register_mr(remoteAccess, FI_WRITE | FI_REMOTE_WRITE | FI_READ | FI_REMOTE_READ, key);
     uint64_t key2 = 2;
