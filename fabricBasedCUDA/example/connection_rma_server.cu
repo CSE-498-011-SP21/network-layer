@@ -29,7 +29,15 @@ int main(int argc, char **argv) {
 
     std::cerr << "Send\n";
 
-    c1->send(buf, 1);
+    *((uint64_t*)buf.get()) = key;
+
+    c1->send(buf, sizeof(uint64_t));
+
+    std::cerr << "Send\n";
+
+    *((uint64_t*)buf.get()) = (uint64_t)remoteAccess.get();
+
+    c1->send(buf, sizeof(uint64_t));
 
     std::cerr << "Recv\n";
 

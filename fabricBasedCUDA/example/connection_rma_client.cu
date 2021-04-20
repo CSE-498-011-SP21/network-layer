@@ -25,11 +25,22 @@ int main(int argc, char **argv) {
 
     std::cerr << "Recv" << std::endl;
 
-    c2->recv(buf, 1);
+    std::cerr << "Using buffer " << (void*) buf.get() << std::endl;
+    c2->recv(buf, 4096);
+
+    uint64_t remoteKey = *((uint64_t *) buf.get());
+
+    std::cerr << "Remote key is " << remoteKey << std::endl;
+
+    c2->recv(buf, 4096);
+
+    uint64_t remoteAddr = *((uint64_t *) buf.get());
+
+    std::cerr << "Remote addr is " << (void*) remoteAddr << std::endl;
 
     *((uint64_t *) buf.get()) = 10;
 
-    c2->read(buf, sizeof(uint64_t), 0, 1);
+    c2->read(buf, sizeof(uint64_t), remoteAddr, remoteKey);
 
     while ((*(uint64_t *) buf.get()) != ~0);
 
@@ -38,4 +49,5 @@ int main(int argc, char **argv) {
     std::cerr << "Send" << std::endl;
 
     c2->send(buf, 1);
+
 }
