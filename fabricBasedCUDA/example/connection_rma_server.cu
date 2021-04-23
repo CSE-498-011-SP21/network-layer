@@ -4,18 +4,32 @@
 
 #include <networklayer/cuda/connection.cuh>
 #include <networklayer/cuda/gpu_buf.cuh>
+#include <cuda.h>
 #include <unistd.h>
 
 int LOG_LEVEL = TRACE;
 
 int main(int argc, char **argv) {
 
+    cuInit(0);
+
+    CUcontext ctx;
+
+    CUdevice d;
+    cuDeviceGet(&d, 0);
+
+    if (cuCtxCreate(&ctx, CU_CTX_MAP_HOST, d) != CUDA_SUCCESS) {
+        exit(1);
+    }
+
     cse498::unique_buf buf;
 
     char *gpu_buf, *cpu_buf;
     cpu_buf = new char[4096];
 
-    cudaMalloc(&gpu_buf, 4096);
+    if(cuMemAlloc((CUdeviceptr*) &gpu_buf, 4096) != CUDA_SUCCESS){
+        exit(2);
+    }
 
     {
         DO_LOG(DEBUG) << (void *) gpu_buf;
