@@ -815,7 +815,7 @@ namespace cse498 {
                     // New error on queue
                     struct fi_cq_err_entry err_entry = {};
                     fi_cq_readerr(cq, &err_entry, 0);
-                    DO_LOG(ERROR) << fi_cq_strerror(cq, -err_entry.prov_errno, err_entry.err_data, nullptr, 0);
+                    DO_LOG(ERROR) << fi_cq_strerror(cq, err_entry.prov_errno, err_entry.err_data, nullptr, 0);
                     return ret;
                 }
             }
