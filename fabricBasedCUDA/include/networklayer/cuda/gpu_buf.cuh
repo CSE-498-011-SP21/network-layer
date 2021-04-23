@@ -101,7 +101,7 @@ namespace cse498 {
          * @return underlying buffer
          */
         inline char *get() {
-            DO_LOG(TRACE) << "Returning " << k_buf;
+            DO_LOG(TRACE) << "Returning " << (void*)k_buf;
             return k_buf;
         }
 
@@ -115,7 +115,7 @@ namespace cse498 {
          * @return underlying buffer
          */
         [[nodiscard]] inline const char *get() const {
-            DO_LOG(TRACE) << "Returning " << k_buf;
+            DO_LOG(TRACE) << "Returning " << (void*)k_buf;
             return k_buf;
         }
 
