@@ -44,11 +44,11 @@ int main(int argc, char **argv) {
 
     *((uint64_t *) buf.get()) = 10;
 
-    c2->read(buf, sizeof(uint64_t), remoteAddr, remoteKey);
+    //c2->read(buf, sizeof(uint64_t), remoteAddr, remoteKey);
 
-    while ((*(uint64_t *) buf.get()) != ~0);
+    //while ((*(uint64_t *) buf.get()) != ~0);
 
-    std::cerr << "Read: " << *(uint64_t *) buf.get() << std::endl;
+    //std::cerr << "Read: " << *(uint64_t *) buf.get() << std::endl;
 
     std::cerr << "Send" << std::endl;
 
