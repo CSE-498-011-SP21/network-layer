@@ -72,5 +72,7 @@ int main(int argc, char **argv) {
 
     c1->recv(buf, 1);
 
+    cuCtxDestroy(ctx);
+
     return 0;
 }
