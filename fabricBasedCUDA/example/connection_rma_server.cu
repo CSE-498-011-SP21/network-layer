@@ -22,6 +22,10 @@ int main(int argc, char **argv) {
         exit(1);
     }
 
+    if(cuCtxSetCurrent(ctx) != CUDA_SUCCESS){
+        exit(3);
+    }
+
     cse498::unique_buf buf;
 
     char *gpu_buf, *cpu_buf;
