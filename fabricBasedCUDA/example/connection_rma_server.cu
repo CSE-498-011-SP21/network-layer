@@ -29,9 +29,9 @@ int main(int argc, char **argv) {
     cse498::unique_buf buf;
 
     char *gpu_buf, *cpu_buf;
-    cpu_buf = new char[4096];
+    cpu_buf = new char[64 * 1024];
 
-    if(cuMemAlloc((CUdeviceptr*) &gpu_buf, 4096) != CUDA_SUCCESS){
+    if(cuMemAlloc((CUdeviceptr*) &gpu_buf, 64 * 1024) != CUDA_SUCCESS){
         exit(2);
     }
 
@@ -39,7 +39,7 @@ int main(int argc, char **argv) {
         DO_LOG(DEBUG) << (void *) gpu_buf;
     }
 
-    cse498::gpu_buf remoteAccess(gpu_buf, cpu_buf, 4096);
+    cse498::gpu_buf remoteAccess(gpu_buf, cpu_buf, 64 * 1024);
 
     const char *addr = "127.0.0.1";
 
