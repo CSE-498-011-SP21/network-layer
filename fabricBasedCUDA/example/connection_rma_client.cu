@@ -38,6 +38,10 @@ int main(int argc, char **argv) {
 
     std::cerr << "Remote addr is " << (void*) remoteAddr << std::endl;
 
+    c2->recv(buf, 4096);
+
+    std::cerr << "Recv buf from GPU" << std::endl;
+
     *((uint64_t *) buf.get()) = 10;
 
     c2->read(buf, sizeof(uint64_t), remoteAddr, remoteKey);
